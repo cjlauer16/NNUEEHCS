@@ -3,7 +3,8 @@ from nnueehcs.model_builder import (build_network, ModelBuilder,
                                     DeltaUQMLPModelBuilder,
                                     EnsembleModelBuilder,
                                     PAGERModelBuilder,
-                                    KDEModelBuilder)
+                                    KDEModelBuilder,
+                                    KDEMLPModel)
 import torch
 import io
 import yaml
@@ -54,6 +55,17 @@ def architecture2():
         nn.Linear(25, 5)
     )
     return model
+
+
+@pytest.fixture()
+def kde_architecture1(architecture1):
+    return KDEMLPModel(architecture1)
+
+
+@pytest.fixture()
+def kde_architecture2(architecture2):
+    return KDEMLPModel(architecture2)
+
 
 @pytest.fixture()
 def duq_architecture1():
@@ -227,16 +239,16 @@ def test_ensemble_model_builder(model_descr_yaml):
     assert not hasattr(info2, 'get_estimator')
 
 
-def test_kde_model_builder(model_descr_yaml, architecture1, architecture2):
+def test_kde_model_builder(model_descr_yaml, kde_architecture1, kde_architecture2):
     model_descr = yaml.safe_load(io.StringIO(model_descr_yaml))
     model_builder = KDEModelBuilder(model_descr['architecture'],
                                     model_descr['kde_model'])
     arch1 = model_builder.build()
-    assert_models_equal(arch1, architecture1)
+    assert_models_equal(arch1, kde_architecture1)
     builder2 = KDEModelBuilder(model_descr['architecture2'],
                                model_descr['kde_model'])
     arch2 = builder2.build()
-    assert_models_equal(arch2, architecture2)
+    assert_models_equal(arch2, kde_architecture2)
 
     info = model_builder.get_info()
     assert info.is_cnn() is True

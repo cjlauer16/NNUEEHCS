@@ -2,9 +2,10 @@ import torch.nn
 import collections
 import io
 import yaml
-from .models import deltaUQ_MLP, EnsembleModel
+from .models import MLPModel, KDEMLPModel, DeltaUQMLP, EnsembleModel, PAGERMLP
 import copy
 import types
+
 
 class LayerBuilder(object):
     # adapted from https://gist.github.com/ferrine/89d739e80712f5549e44b2c2435979ef
@@ -127,8 +128,9 @@ class ModelInfo:
 
 
 class ModelBuilder:
-    def __init__(self, model_descr):
+    def __init__(self, model_descr, train_config=None):
         self.model_descr = copy.deepcopy(model_descr)
+        self.train_config = train_config
 
     def build(self):
         built = build_network(self.model_descr)
@@ -143,41 +145,76 @@ class ModelBuilder:
         return info
 
 
-class DeltaUQMLPModelBuilder(ModelBuilder):
-    def __init__(self, base_descr, duq_descr):
-        super().__init__(base_descr)
-        self.duq_descr = duq_descr
+class MLPModelBuilder(ModelBuilder):
+    def __init__(self, model_descr, **kwargs):
+        super().__init__(model_descr, **kwargs)
 
     def build(self):
+        model = super().build()
+        return MLPModel(model, train_config=self.train_config)
+
+
+class DeltaUQMLPModelBuilder(ModelBuilder):
+    def __init__(self, base_descr, duq_descr, **kwargs):
+        super().__init__(base_descr, **kwargs)
+        self.duq_descr = duq_descr
+        self._updated = False
+
+    def build(self):
+        self.update_info(self.get_info())
         base_model = super().build()
-        return deltaUQ_MLP(base_model, estimator=self.duq_descr['estimator'])
+        print(base_model)
+        return DeltaUQMLP(base_model, estimator=self.duq_descr['estimator'])
 
     def update_info(self, info):
+
         estimator = self.duq_descr['estimator']
 
         def get_estimator(self):
             return estimator
-        info.set_num_inputs(2 * info.num_inputs())
         info.get_estimator = types.MethodType(get_estimator, info)
+        if self._updated:
+            return
+        self._updated = True
+        info.set_num_inputs(2 * info.num_inputs())
 
 
-class PAGERModelBuilder(DeltaUQMLPModelBuilder):
+class PAGERModelBuilder(ModelBuilder):
     # for now, we will just inherit from DUQ.
     # Later update as needed
-    def __init__(self, base_descr, duq_descr):
-        super().__init__(base_descr, duq_descr)
+    def __init__(self, base_descr, pager_descr, **kwargs):
+        super().__init__(base_descr, **kwargs)
+        self.pager_descr = pager_descr
+        self._updated = False
+
+    def build(self):
+        self.update_info(self.get_info())
+        base_model = super().build()
+        return PAGERMLP(base_model, estimator=self.pager_descr['estimator'])
+
+    def update_info(self, info):
+        estimator = self.pager_descr['estimator']
+
+        def get_estimator(self):
+            return estimator
+        info.get_estimator = types.MethodType(get_estimator, info)
+        if self._updated:
+            return
+        self._updated = True
+        info.set_num_inputs(2 * info.num_inputs())
+
 
 
 class EnsembleModelBuilder(ModelBuilder):
-    def __init__(self, base_descr, ensemble_descr):
-        super().__init__(base_descr)
+    def __init__(self, base_descr, ensemble_descr, **kwargs):
+        super().__init__(base_descr, **kwargs)
         self.ensemble_descr = ensemble_descr
 
     def build(self):
         info = self.get_info()
         build = super().build
         base_models = [build() for _ in range(info.get_num_models())]
-        return EnsembleModel(base_models)
+        return EnsembleModel(base_models, train_config=self.train_config)
 
     def update_info(self, info):
         num_models = self.ensemble_descr['num_models']
@@ -188,5 +225,10 @@ class EnsembleModelBuilder(ModelBuilder):
 
 
 class KDEModelBuilder(ModelBuilder):
-    def __init__(self, base_descr, kde_descr):
-        super().__init__(base_descr)
+    def __init__(self, base_descr, kde_descr, **kwargs):
+        super().__init__(base_descr, **kwargs)
+
+    def build(self):
+        return KDEMLPModel(super().build(),
+                           train_config=self.train_config
+                           )
