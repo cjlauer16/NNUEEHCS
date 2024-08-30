@@ -39,8 +39,8 @@ class FixtureHDF5File:
             ipt[...] = np.random.rand(*self.shape)
             opt[...] = np.random.rand(*self.shape)
 
-            self.ipt_groundtruth = ipt[...].copy()
-            self.opt_groundtruth = opt[...].copy()
+            self.ipt_groundtruth = torch.tensor(ipt[...])
+            self.opt_groundtruth = torch.tensor(opt[...])
 
     def __del__(self):
         self.delete_file(self.filename)
@@ -326,3 +326,84 @@ def test_hdf5datasetreader(datafile_yaml, hdf5dataset_fixture):
 
     assert (dset.input == gtruth_ipt).all()
     assert (dset.output == gtruth_opt).all()
+
+
+@pytest.fixture()
+def datafile_yaml2():
+    return io.StringIO("""
+      datasets:
+        delim_train:
+            format: character_delimited
+            path: partition_test.ssv
+            delimiter: ','
+            percentiles: '[0, 10], [40, 75]'
+        delim_test:
+              format: character_delimited
+              partition_test: test.ssv
+              delimiter: ','
+        delim_train_no_percentiles:
+            format: character_delimited
+            path: partition_test.ssv
+            delimiter: ','
+    """)
+
+
+class CharDelimitedFile:
+    def __init__(self, filename: str, delimiter: str):
+        self.filename = filename
+        self.delimiter = delimiter
+        self.write_to_file()
+
+    def write_to_file(self):
+        with open(self.filename, 'w') as f:
+            for i in range(1, 101):
+                fi = float(i)
+                f.write(f'{fi}{self.delimiter}{101+fi}{self.delimiter}{fi}\n')
+
+    def __del__(self):
+        os.remove(self.filename)
+
+
+@pytest.fixture()
+def char_delim_file():
+    return CharDelimitedFile('partition_test.ssv', ',')
+
+
+@pytest.fixture()
+def char_delim_dset(datafile_yaml2, char_delim_file):
+    dset = read_dataset_from_yaml(datafile_yaml2, 'delim_train')
+    datafile_yaml2.seek(0)
+    return dset
+
+
+def test_dataset_split(char_delim_dset, datafile_yaml2):
+    ipt = torch.tensor([[i, 101+i] for i in range(1, 101)], dtype=torch.float64)
+    opt = torch.tensor([i for i in range(1, 101)], dtype=torch.float64)
+    slc1, slc2 = slice(0, 10), slice(40, 75)
+
+    slced_ipt = torch.cat([ipt[slc1], ipt[slc2]])
+    slced_opt = torch.cat([opt[slc1], opt[slc2]])
+
+
+    assert (char_delim_dset.input == slced_ipt).all()
+    assert (char_delim_dset.output == slced_opt).all()
+
+    percentiles = char_delim_dset.get_percentiles()
+    assert percentiles == [(0, 10), (40, 75)]
+
+
+    no_percentiles = read_dataset_from_yaml(datafile_yaml2, 'delim_train_no_percentiles')
+    partitioned = no_percentiles.percentile_partition(percentiles)
+
+    other_percentiles = [(10, 40), (75, 90), (90, 100)]
+    other_partitioned = no_percentiles.percentile_partition(other_percentiles)
+
+    part_combined = torch.cat([partitioned[1], other_partitioned[1]])
+    pc_sorted = part_combined[part_combined.argsort()]
+    assert (pc_sorted == opt).all()
+
+
+    all_partitioned = no_percentiles.percentile_partition([(0, 100)])
+    assert (all_partitioned[1] == opt).all()
+
+    assert (no_percentiles.output == opt).all()

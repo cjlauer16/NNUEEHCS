@@ -5,11 +5,13 @@ import yaml
 import re
 import csv
 import pandas as pd
+import numpy as np
 
+percentile_re = re.compile(r'(?:\[(\d+),\s{0,1}(\d+)\],{0,1})')
 
 class DatasetCommon():
-    def __init__(self):
-        pass
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
 
     def __len__(self):
         return self.len
@@ -24,23 +26,68 @@ class DatasetCommon():
     def output_as_torch_tensor(self):
         return torch.tensor(self.output)
 
+    def get_percentiles(self):
+        try:
+            percs = self.kwargs['percentiles']
+            parsed = percentile_re.findall(percs)
+            opt_percs = list()
+            for p in parsed:
+                lower, uper = int(p[0]), int(p[1])
+                opt_percs.append((lower, uper))
+            return opt_percs
+        except KeyError:
+            return [(0, 100)]
+
+
+    def percentile_partition(self, percentiles):
+        input_tensor = self.input_as_torch_tensor()
+        output_tensor = self.output_as_torch_tensor()
+
+        if len(output_tensor.shape) > 2:
+            return input_tensor, output_tensor
+        
+        unique_percentiles = sorted(set(p for range_pair in percentiles for p in range_pair))
+        percentile_values = torch.tensor([
+            torch.quantile(output_tensor, q/100) for q in unique_percentiles
+        ])
+        
+        percentile_dict = dict(zip(unique_percentiles, percentile_values))
+        
+        mask = torch.zeros(len(output_tensor), dtype=torch.bool)
+        
+        for lower, upper in percentiles:
+            lower_value = percentile_dict[lower]
+            upper_value = percentile_dict[upper]
+            mask |= (output_tensor >= lower_value) & (output_tensor <= upper_value)
+        
+        partitioned_input = input_tensor[mask]
+        partitioned_output = output_tensor[mask]
+        
+        return partitioned_input, partitioned_output
+
+
+    def _percentile_partition(self):
+        self.input, self.output = self.percentile_partition(self.get_percentiles())
+
 
 class HDF5Dataset(DatasetCommon, Dataset):
     def __init__(self, path: str, group_name: str, 
-                 input_dataset: str, output_dataset: str):
-        super().__init__()
+                 input_dataset: str, output_dataset: str,
+                 **kwargs):
+        super().__init__(**kwargs)
         self.path = path
         self.group_name = group_name
         self.input_dataset = input_dataset
         self.output_dataset = output_dataset
 
-        self.ipt_dataset, self.opt_dataset = self.get_datasets(path,
-                                                               group_name,
-                                                               input_dataset,
-                                                               output_dataset
-                                                               )
-        assert len(self.ipt_dataset) == len(self.opt_dataset)
-        self.len = len(self.ipt_dataset)
+        self.input, self.output = self.get_datasets(path,
+                                                    group_name,
+                                                    input_dataset,
+                                                    output_dataset
+                                                    )
+        assert len(self.input) == len(self.output)
+        self.len = len(self.input)
+        self._percentile_partition()
 
     def get_datasets(self, filename, group_name, ipt_dataset, opt_dataset):
         import h5py
@@ -53,30 +100,23 @@ class HDF5Dataset(DatasetCommon, Dataset):
                   f" assuming this is not necessary and removing it."
                   f" Reshaping to {ipt_dataset.shape[1:]}"
                   )
-            ipt_dataset = ipt_dataset[0]
-            opt_dataset = opt_dataset[0]
+            ipt_dataset = torch.tensor(ipt_dataset[0])
+            opt_dataset = torch.tensor(opt_dataset[0])
         return ipt_dataset, opt_dataset
 
     @property
-    def input(self):
-        return self.ipt_dataset
-
-    @property
-    def output(self):
-        return self.opt_dataset
-
-    @property
     def shape(self):
-        return self.ipt_dataset.shape
+        return self.input.shape
 
 
 class ARFFDataSet(DatasetCommon, Dataset):
-    def __init__(self, path: str):
-        super().__init__()
+    def __init__(self, path: str, **kwargs):
+        super().__init__(**kwargs)
         self.path = path
         self.input, self.output = self.read_arff_file(path)
         self.input, self.output = torch.tensor(self.input), torch.tensor(self.output)
         self.len = len(self.input)
+        self._percentile_partition()
 
     def read_arff_file(self, path):
         from scipy.io import arff
@@ -91,13 +131,14 @@ class ARFFDataSet(DatasetCommon, Dataset):
 
 
 class CharacterDelimitedDataset(DatasetCommon, Dataset):
-    def __init__(self, path: str, delimiter: str):
-        super().__init__()
+    def __init__(self, path: str, delimiter: str, **kwargs):
+        super().__init__(**kwargs)
         self.path = path
         self.delimiter = delimiter
         self.input, self.output = self.read_file(path, delimiter)
         self.input, self.output = torch.tensor(self.input), torch.tensor(self.output)
         self.len = len(self.input)
+        self._percentile_partition()
 
     def read_file(self, path, delimiter):
         has_header = self.file_has_header(path, delimiter)
