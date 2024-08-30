@@ -122,14 +122,14 @@ def test_hdf5dataset_getitem(hdf5dataset_fixture):
     dset = hdf5dataset_fixture
     for i in range(len(dset)):
         ipt, opt = dset[i]
-        assert (ipt == torch.tensor(dset.input[i])).all()
-        assert (opt == torch.tensor(dset.output[i])).all()
+        assert (ipt == dset.input[i]).all()
+        assert (opt == dset.output[i]).all()
 
 
 def test_hdf5dataset_input_as_torch_tensor(hdf5dataset_fixture):
     dset = hdf5dataset_fixture
     ipt = dset.input_as_torch_tensor()
-    assert (ipt == torch.tensor(dset.input)).all()
+    assert (ipt == dset.input).all()
 
 
 def test_hdf5dataset_slice(hdf5dataset_fixture):
@@ -138,8 +138,8 @@ def test_hdf5dataset_slice(hdf5dataset_fixture):
     dset_slice = dset[slc]
     assert len(dset_slice[0]) == 5
     assert len(dset_slice[1]) == 5
-    assert (dset_slice[0] == torch.tensor(dset.input[0:10:2])).all()
-    assert (dset_slice[1] == torch.tensor(dset.output[0:10:2])).all()
+    assert (dset_slice[0] == dset.input[0:10:2]).all()
+    assert (dset_slice[1] == dset.output[0:10:2]).all()
 
 
 @pytest.fixture()
@@ -195,8 +195,8 @@ def test_arff_slice(arff_dataset_fixture):
     dset_slice = dset[slc]
     assert len(dset_slice[0]) == 3
     assert len(dset_slice[1]) == 3
-    assert (dset_slice[0] == torch.tensor(dset.input[0:5:2])).all()
-    assert (dset_slice[1] == torch.tensor(dset.output[0:5:2])).all()
+    assert (dset_slice[0] == dset.input[0:5:2]).all()
+    assert (dset_slice[1] == dset.output[0:5:2]).all()
 
 
 def test_arff_datasetreader(datafile_yaml, arff_file_fixture, arff_ground_truth):
@@ -337,10 +337,11 @@ def datafile_yaml2():
             path: partition_test.ssv
             delimiter: ','
             percentiles: '[0, 10], [40, 75]'
-        delim_test:
-              format: character_delimited
-              partition_test: test.ssv
-              delimiter: ','
+        delim_train_with_dtype:
+            format: character_delimited
+            path: partition_test.ssv
+            delimiter: ','
+            dtype: int32
         delim_train_no_percentiles:
             format: character_delimited
             path: partition_test.ssv
@@ -407,3 +408,13 @@ def test_dataset_split(char_delim_dset, datafile_yaml2):
     assert (all_partitioned[1] == opt).all()
 
     assert (no_percentiles.output == opt).all()
+
+def test_dtype_conversion(char_delim_dset, datafile_yaml2):
+    ipt = torch.tensor([[i, 101+i] for i in range(1, 101)], dtype=torch.int32)
+    opt = torch.tensor([i for i in range(1, 101)], dtype=torch.int32)
+
+    dset = read_dataset_from_yaml(datafile_yaml2, 'delim_train_with_dtype')
+    assert dset.input.dtype == torch.int32
+    assert dset.output.dtype == torch.int32
+    assert (dset.input == ipt).all()
+    assert (dset.output == opt).all()

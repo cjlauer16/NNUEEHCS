@@ -13,18 +13,29 @@ class DatasetCommon():
     def __init__(self, **kwargs):
         self.kwargs = kwargs
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        original_init = cls.__init__
+        def new_init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            self.len = len(self.input)
+            self._percentile_partition()
+            self._dtype_conversion()
+        cls.__init__ = new_init
+
+
     def __len__(self):
         return self.len
 
     def __getitem__(self, idx):
-        return (torch.tensor(self.input[idx]),
-                torch.tensor(self.output[idx]))
+        return (self.input[idx],
+                self.output[idx])
 
     def input_as_torch_tensor(self):
-        return torch.tensor(self.input)
+        return self.input
 
     def output_as_torch_tensor(self):
-        return torch.tensor(self.output)
+        return self.output
 
     def get_percentiles(self):
         try:
@@ -69,6 +80,16 @@ class DatasetCommon():
     def _percentile_partition(self):
         self.input, self.output = self.percentile_partition(self.get_percentiles())
 
+    def _dtype_conversion(self):
+        try:
+            dt = self.kwargs['dtype']
+            self.input = self.input.type(dtype=getattr(torch, dt))
+            self.output = self.output.type(dtype=getattr(torch, dt))
+        except KeyError:
+            pass
+
+    
+
 
 class HDF5Dataset(DatasetCommon, Dataset):
     def __init__(self, path: str, group_name: str, 
@@ -85,9 +106,9 @@ class HDF5Dataset(DatasetCommon, Dataset):
                                                     input_dataset,
                                                     output_dataset
                                                     )
+        self.input = torch.tensor(self.input)
+        self.output = torch.tensor(self.output)
         assert len(self.input) == len(self.output)
-        self.len = len(self.input)
-        self._percentile_partition()
 
     def get_datasets(self, filename, group_name, ipt_dataset, opt_dataset):
         import h5py
@@ -115,8 +136,6 @@ class ARFFDataSet(DatasetCommon, Dataset):
         self.path = path
         self.input, self.output = self.read_arff_file(path)
         self.input, self.output = torch.tensor(self.input), torch.tensor(self.output)
-        self.len = len(self.input)
-        self._percentile_partition()
 
     def read_arff_file(self, path):
         from scipy.io import arff
@@ -137,8 +156,6 @@ class CharacterDelimitedDataset(DatasetCommon, Dataset):
         self.delimiter = delimiter
         self.input, self.output = self.read_file(path, delimiter)
         self.input, self.output = torch.tensor(self.input), torch.tensor(self.output)
-        self.len = len(self.input)
-        self._percentile_partition()
 
     def read_file(self, path, delimiter):
         has_header = self.file_has_header(path, delimiter)
