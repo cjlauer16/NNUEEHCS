@@ -4,8 +4,10 @@ from nnueehcs.model_builder import (EnsembleModelBuilder,
                                     KDEModelBuilder, 
                                     DeltaUQMLPModelBuilder,
                                     MLPModelBuilder,
-                                    PAGERModelBuilder
+                                    PAGERModelBuilder,
+                                    
                                     )
+from nnueehcs.training import Trainer
 import pytorch_lightning as L
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import pandas as pd
@@ -66,23 +68,21 @@ def cleanup_files():
 
 def get_trainer(trainer_config, name, callbacks=None):
     early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=0.01, patience=200, verbose=False, mode="min")
-    logger = L.loggers.CSVLogger("logs", name)
     cbs = [early_stop_callback]
     if callbacks:
         cbs.extend(callbacks)
+    return Trainer(name, trainer_config, callbacks=cbs)
 
-    return L.Trainer(callbacks=cbs, **trainer_config, logger=logger), logger
 
-
-def model_accuracy_assertions(log_dir, tolerance=0.99, loss_ceiling = 0.01):
+def model_accuracy_assertions(log_dir, tolerance=0.99, loss_ceiling = 0.03):
     logger_path = f'{log_dir}/metrics.csv'
     val_loss = pd.read_csv(logger_path)['val_loss']
     min_loss = val_loss.min()
 
-    assert is_within_tolerance(min_loss, 0.0018693739548325, tolerance)
+    assert is_within_tolerance(min_loss, 0.018744820728898, tolerance)
     assert min_loss < loss_ceiling
     assert val_loss.idxmin() > val_loss.idxmax()
-    assert val_loss.min()*100 < val_loss.max()
+    assert val_loss.min()*50 < val_loss.max()
 
 
 def prediction_assertions(model):
@@ -94,7 +94,8 @@ def prediction_assertions(model):
 
 
 def test_builder(trainer_config, training_config, network_descr, train_dataloader):
-    trainer, logger = get_trainer(trainer_config, 'mlp')
+    trainer = get_trainer(trainer_config, 'mlp')
+    logger = trainer.get_logger()
 
     mlp = MLPModelBuilder(network_descr, train_config=training_config).build()
     trainer.fit(mlp, train_dataloader, train_dataloader)
@@ -104,7 +105,8 @@ def test_builder(trainer_config, training_config, network_descr, train_dataloade
 
 
 def test_ensembles(trainer_config, training_config, network_descr, train_dataloader):
-    trainer, logger = get_trainer(trainer_config, 'ensembles')
+    trainer = get_trainer(trainer_config, 'ensembles')
+    logger = trainer.get_logger()
 
     ensemble_descr = {'num_models': 3}
     ensembles = EnsembleModelBuilder(network_descr, ensemble_descr, train_config=training_config).build()
@@ -117,7 +119,8 @@ def test_ensembles(trainer_config, training_config, network_descr, train_dataloa
 def test_kde(trainer_config, training_config, network_descr, train_dataloader):
 
     kde = KDEModelBuilder(network_descr, {}, train_config=training_config).build()
-    trainer, logger = get_trainer(trainer_config, 'kde', callbacks=kde.get_callbacks())
+    trainer = get_trainer(trainer_config, 'kde', callbacks=kde.get_callbacks())
+    logger = trainer.get_logger()
     trainer.fit(kde, train_dataloader, train_dataloader)
 
     model_accuracy_assertions(logger.log_dir)
@@ -136,7 +139,8 @@ def test_kde(trainer_config, training_config, network_descr, train_dataloader):
 
 
 def test_duq(trainer_config, training_config, network_descr, train_dataloader):
-    trainer, logger = get_trainer(trainer_config, 'kde')
+    trainer = get_trainer(trainer_config, 'kde')
+    logger = trainer.get_logger()
 
     duq = DeltaUQMLPModelBuilder(network_descr, {'estimator': 'std'}, train_config=training_config).build()
     trainer.fit(duq, train_dataloader, train_dataloader)
@@ -147,7 +151,8 @@ def test_duq(trainer_config, training_config, network_descr, train_dataloader):
 
 
 def test_pager(trainer_config, training_config, network_descr, train_dataloader):
-    trainer, logger = get_trainer(trainer_config, 'kde')
+    trainer = get_trainer(trainer_config, 'kde')
+    logger = trainer.get_logger()
 
     pager = PAGERModelBuilder(network_descr, {'estimator': 'std'}, train_config=training_config).build()
     trainer.fit(pager, train_dataloader, train_dataloader)

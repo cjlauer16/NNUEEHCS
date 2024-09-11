@@ -18,7 +18,7 @@ class DatasetCommon():
         original_init = cls.__init__
         def new_init(self, *args, **kwargs):
             original_init(self, *args, **kwargs)
-            self.len = len(self.input)
+            self._apply_slice()
             self._percentile_partition()
             self._dtype_conversion()
         cls.__init__ = new_init
@@ -26,6 +26,10 @@ class DatasetCommon():
 
     def __len__(self):
         return self.len
+
+    @property
+    def len(self):
+        return len(self.input)
 
     def __getitem__(self, idx):
         return (self.input[idx],
@@ -65,11 +69,14 @@ class DatasetCommon():
         percentile_dict = dict(zip(unique_percentiles, percentile_values))
         
         mask = torch.zeros(len(output_tensor), dtype=torch.bool)
-        
+
         for lower, upper in percentiles:
             lower_value = percentile_dict[lower]
             upper_value = percentile_dict[upper]
-            mask |= (output_tensor >= lower_value) & (output_tensor <= upper_value)
+            if lower == 0:
+                mask |= (output_tensor <= upper_value).view(len(output_tensor))
+            else:
+                mask |= ((output_tensor > lower_value) & (output_tensor <= upper_value)).view(len(output_tensor))
         
         partitioned_input = input_tensor[mask]
         partitioned_output = output_tensor[mask]
@@ -88,9 +95,33 @@ class DatasetCommon():
         except KeyError:
             pass
 
+    def _apply_slice(self):
+        try:
+            subset = self.kwargs['subset']
+            if 'step' not in subset:
+                subset['step'] = 1
+            if 'start' not in subset:
+                subset['start'] = 0
+
+            start = subset['start']
+            stop = subset['stop']
+            step = subset['step']
+            slc = slice(start, stop, step)
+            self.input = self.input[slc]
+            self.output = self.output[slc]
+        except KeyError:
+            pass
+
+    @property
+    def dtype(self):
+        return self.input.dtype
+
+    def train_test_split(self, test_proportion: float):
+        test_size = int(len(self) * test_proportion)
+        train_size = len(self) - test_size
+        return torch.utils.data.random_split(self, [train_size, test_size])
+
     
-
-
 class HDF5Dataset(DatasetCommon, Dataset):
     def __init__(self, path: str, group_name: str, 
                  input_dataset: str, output_dataset: str,
@@ -106,8 +137,8 @@ class HDF5Dataset(DatasetCommon, Dataset):
                                                     input_dataset,
                                                     output_dataset
                                                     )
-        self.input = torch.tensor(self.input)
-        self.output = torch.tensor(self.output)
+        self.input = self.input
+        self.output = self.output
         assert len(self.input) == len(self.output)
 
     def get_datasets(self, filename, group_name, ipt_dataset, opt_dataset):
@@ -121,8 +152,10 @@ class HDF5Dataset(DatasetCommon, Dataset):
                   f" assuming this is not necessary and removing it."
                   f" Reshaping to {ipt_dataset.shape[1:]}"
                   )
-            ipt_dataset = torch.tensor(ipt_dataset[0])
-            opt_dataset = torch.tensor(opt_dataset[0])
+            ipt_dataset = ipt_dataset[0]
+            opt_dataset = opt_dataset[0]
+        ipt_dataset = torch.tensor(ipt_dataset)
+        opt_dataset = torch.tensor(opt_dataset)
         return ipt_dataset, opt_dataset
 
     @property
@@ -142,7 +175,7 @@ class ARFFDataSet(DatasetCommon, Dataset):
         import pandas as pd
         data, meta = arff.loadarff(path)
         df = pd.DataFrame(data)
-        return df.iloc[:, :-1].values, df.iloc[:, -1].values
+        return df.iloc[:, :-1].values, np.expand_dims(df.iloc[:, -1].values, -1)
 
     @property
     def shape(self):
@@ -200,14 +233,7 @@ class CharacterDelimitedDataset(DatasetCommon, Dataset):
         return self.input.shape
 
 
-def read_dataset_from_yaml(filename: str, dataset_name: str):
-    try:
-        with open(filename, 'r') as f:
-            config = yaml.safe_load(f)
-    except TypeError:
-        config = yaml.safe_load(filename)
-
-    config = config['datasets']
+def get_dataset_from_config(config, dataset_name):
     dset_details = config[dataset_name]
     if dset_details['format'] == 'hdf5':
         del dset_details['format']
@@ -220,3 +246,13 @@ def read_dataset_from_yaml(filename: str, dataset_name: str):
         return CharacterDelimitedDataset(**dset_details)
     else:
         raise ValueError(f"Unknown dataset format {dset_details['format']}")
+
+def read_dataset_from_yaml(filename: str, dataset_name: str):
+    try:
+        with open(filename, 'r') as f:
+            config = yaml.safe_load(f)
+    except TypeError:
+        config = yaml.safe_load(filename)
+
+    config = config['datasets']
+    return get_dataset_from_config(config, dataset_name)

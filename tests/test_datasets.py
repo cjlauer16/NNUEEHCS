@@ -174,7 +174,7 @@ def test_arffdatasetreader(arff_file_fixture):
                                ],
                                dtype=torch.float64)
     gtruth_opt = torch.tensor([0.0, 1.111111, 2.222222, 3.333333, 4.444444, 5.555555, 6.666666],
-                              dtype=torch.float64)
+                              dtype=torch.float64).view(-1, 1)
 
     assert (dset.input == gtruth_ipt).all()
     assert (dset.output == gtruth_opt).all()
@@ -418,3 +418,27 @@ def test_dtype_conversion(char_delim_dset, datafile_yaml2):
     assert dset.output.dtype == torch.int32
     assert (dset.input == ipt).all()
     assert (dset.output == opt).all()
+
+
+def test_dataset_with_length_cutoff(char_delim_dset):
+    dset = char_delim_dset
+    dset.kwargs['subset'] = dict()
+    subset = dset.kwargs['subset']
+    subset['stop'] = 10
+    dset._apply_slice()
+    assert len(dset) == 10
+    assert len(dset.input) == 10
+    assert len(dset.output) == 10
+
+    subset['stop'] = 100
+    dset._apply_slice()
+    assert len(dset) == 10
+    assert len(dset.input) == 10
+    assert len(dset.output) == 10
+
+    subset['stop'] = 10
+    subset['step'] = 2
+    dset._apply_slice()
+    assert len(dset) == 5
+    assert len(dset.input) == 5
+    assert len(dset.output) == 5

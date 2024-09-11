@@ -117,10 +117,12 @@ architecture2:
         args: [25, 5]
 delta_uq_model:
     estimator: std
+    num_anchors: 2
 pager_model:
     estimator: std
+    num_anchors: 3
 kde_model:
-    no-op: true
+    bandwidth: scott
 ensemble_model:
     num_models: 10
 """
@@ -176,6 +178,7 @@ def test_duq_model_builder(model_descr_yaml, duq_architecture1, duq_architecture
 
     net = model_builder.build()
     assert_models_equal(net, duq_architecture1)
+    assert net.num_anchors == 2
 
     model_builder = DeltaUQMLPModelBuilder(model_descr['architecture2'], model_descr['delta_uq_model'])
     info = model_builder.get_info()
@@ -193,6 +196,8 @@ def test_pager_model_builder(model_descr_yaml, duq_architecture1, duq_architectu
     model_descr = yaml.safe_load(io.StringIO(model_descr_yaml))
     model_builder = PAGERModelBuilder(model_descr['architecture'], model_descr['pager_model'])
     net = model_builder.build()
+    assert net.num_anchors == 3
+    assert net.num_anchors == 3
     assert_models_equal(net, duq_architecture1)
     info = model_builder.get_info()
     assert info.is_cnn() is True

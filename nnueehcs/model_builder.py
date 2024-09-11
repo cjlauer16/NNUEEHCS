@@ -164,7 +164,7 @@ class DeltaUQMLPModelBuilder(ModelBuilder):
         self.update_info(self.get_info())
         base_model = super().build()
         print(base_model)
-        return DeltaUQMLP(base_model, estimator=self.duq_descr['estimator'])
+        return DeltaUQMLP(base_model, **self.duq_descr)
 
     def update_info(self, info):
 
@@ -190,7 +190,7 @@ class PAGERModelBuilder(ModelBuilder):
     def build(self):
         self.update_info(self.get_info())
         base_model = super().build()
-        return PAGERMLP(base_model, estimator=self.pager_descr['estimator'])
+        return PAGERMLP(base_model, **self.pager_descr)
 
     def update_info(self, info):
         estimator = self.pager_descr['estimator']
@@ -227,8 +227,10 @@ class EnsembleModelBuilder(ModelBuilder):
 class KDEModelBuilder(ModelBuilder):
     def __init__(self, base_descr, kde_descr, **kwargs):
         super().__init__(base_descr, **kwargs)
+        self.kde_descr = kde_descr
 
     def build(self):
         return KDEMLPModel(super().build(),
+                           **self.kde_descr,
                            train_config=self.train_config
                            )
