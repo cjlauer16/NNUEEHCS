@@ -227,14 +227,13 @@ class CharacterDelimitedDataset(DatasetCommon, Dataset):
     
         return has_header
 
-
     @property
     def shape(self):
         return self.input.shape
 
 
 def get_dataset_from_config(config, dataset_name):
-    dset_details = config[dataset_name]
+    dset_details = config[dataset_name].copy()
     if dset_details['format'] == 'hdf5':
         del dset_details['format']
         return HDF5Dataset(**dset_details)
@@ -246,6 +245,7 @@ def get_dataset_from_config(config, dataset_name):
         return CharacterDelimitedDataset(**dset_details)
     else:
         raise ValueError(f"Unknown dataset format {dset_details['format']}")
+
 
 def read_dataset_from_yaml(filename: str, dataset_name: str):
     try:
