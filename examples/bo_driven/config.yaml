@@ -1,0 +1,111 @@
+---
+trainer:
+  accelerator: gpu
+  max_epochs: 10
+  limit_train_batches: 100
+  limit_val_batches: 100
+  log_every_n_steps: 5
+  num_sanity_val_steps: 0
+  gradient_clip_val: 5
+training:
+  batch_size: 32
+  loss: l1_loss
+  validation_split: 0.2
+
+benchmarks:
+  binomial_options:
+      model:
+        architecture:
+          - Linear:
+              args: [5, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 1]
+
+      datasets:
+        tails_id:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/binomial_options_16777216.h5'
+          group_name: BinomialOptionsKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[0, 70]'
+        tails_ood:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/binomial_options_16777216.h5'
+          group_name: BinomialOptionsKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[70, 100]'
+        gaps_id:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/binomial_options_16777216.h5'
+          group_name: BinomialOptionsKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[0, 30], [60, 100]'
+        gaps_ood:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/binomial_options_16777216.h5'
+          group_name: BinomialOptionsKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[30, 60]'
+
+
+uq_methods:
+  ensemble:
+    num_models: 8
+  kde:
+    bandwidth: 'scott'
+  delta_uq:
+    num_anchors: 300
+    estimator: 'std'
+
+
+
+
+  # ailerons_ds:
+  #   format: arff
+  #   path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/ailerons.arff
+  #   # percentiles: '[0, 30], [60, 100]'
+  #   percentiles: '[0, 70]'
+
+  # ailerons_ood:
+  #   format: arff
+  #   path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/ailerons.arff
+  #   # percentiles: '[30, 60]'
+  #   percentiles: '[70, 100]'
