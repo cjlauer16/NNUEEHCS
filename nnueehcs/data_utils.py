@@ -198,7 +198,6 @@ class CharacterDelimitedDataset(DatasetCommon, Dataset):
             df = pd.read_csv(path, delimiter=delimiter, header=None)
         return df.iloc[:, :-1].values, df.iloc[:, -1].values
 
-
     def file_has_header(self, path, sep):
         if isinstance(path, str):
             with open(path, 'r') as file:
@@ -208,7 +207,7 @@ class CharacterDelimitedDataset(DatasetCommon, Dataset):
             path.seek(0)
             sample_lines = [path.readline() for _ in range(5)]
             path.seek(original_position)
-    
+
         processed_lines = []
         for line in sample_lines:
             if sep == r'\s+':
@@ -216,15 +215,15 @@ class CharacterDelimitedDataset(DatasetCommon, Dataset):
             else:
                 processed_line = line.rstrip('\n').replace(sep, ',')
             processed_lines.append(processed_line)
-    
+
         sample = '\n'.join(processed_lines)
-    
+
         sniffer = csv.Sniffer()
         try:
             has_header = sniffer.has_header(sample)
         except csv.Error:
             has_header = False
-    
+
         return has_header
 
     @property

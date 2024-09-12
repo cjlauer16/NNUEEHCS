@@ -35,16 +35,18 @@ class UncertaintyEstimate:
         elif isinstance(data, tuple):
             return tuple(self._to_numpy(d) for d in data)
 
+
 class UncertaintyDistanceMetric(ABC):
     @abstractmethod
     def distance(self, ue1: UncertaintyEstimate, ue2: UncertaintyEstimate) -> float:
         pass
 
+
 class WassersteinDistance(UncertaintyDistanceMetric):
     def distance(self, ue1: UncertaintyEstimate, ue2: UncertaintyEstimate) -> float:
         if ue1.dimensions != ue2.dimensions:
             raise ValueError("Uncertainty estimates must have the same dimensions")
-        
+
         if ue1.dimensions == 1:
             return wasserstein_distance(ue1.flatten(), ue2.flatten())
         else:
@@ -53,32 +55,44 @@ class WassersteinDistance(UncertaintyDistanceMetric):
                          for i in range(ue1.dimensions)]
             return np.mean(distances)
 
+
 class EuclideanDistance(UncertaintyDistanceMetric):
     def distance(self, ue1: UncertaintyEstimate, ue2: UncertaintyEstimate) -> float:
         if ue1.dimensions != ue2.dimensions:
             raise ValueError("Uncertainty estimates must have the same dimensions")
-        
+
         return np.mean(np.sqrt(np.sum((ue1.data - ue2.data) ** 2, axis=-1)))
+
 
 class UncertaintyEvaluator:
     def __init__(self, distance_metric: UncertaintyDistanceMetric):
         self.distance_metric = distance_metric
 
     def evaluate(self, model: nn.Module, id_data: tuple, ood_data: tuple) -> dict:
+        import time
         model.eval()
         id_ipt, id_opt = id_data
         ood_ipt, ood_opt = ood_data
+        id_time = 0
+        ood_time = 0
         with torch.no_grad():
+            id_start = time.time()
             id_preds, id_ue_raw = model(id_ipt, return_ue=True)
+            id_end = time.time()
+            ood_start = time.time()
             ood_preds, ood_ue_raw = model(ood_ipt, return_ue=True)
-        
+            ood_end = time.time()
+
+            id_time = id_end - id_start
+            ood_time = ood_end - ood_start
+
         id_ue = UncertaintyEstimate(id_ue_raw)
         ood_ue = UncertaintyEstimate(ood_ue_raw)
-        
+
         uncertainty_distance = self.distance_metric.distance(id_ue, ood_ue)
 
         loss_fn = model.val_loss
-        
+
         return {
             "id_loss": loss_fn(id_preds, id_opt).item(),
             "ood_loss": loss_fn(ood_preds, ood_opt).item(),
@@ -86,19 +100,22 @@ class UncertaintyEvaluator:
             "avg_ood_uncertainty": ood_ue.mean().item(),
             "uncertainty_distance": uncertainty_distance,
             "uncertainty_dimensions": id_ue.dimensions,
+            'id_time': id_time,
+            'ood_time': ood_time,
             'id_ue': id_ue,
             'ood_ue': ood_ue
         }
+
 
 def get_uncertainty_evaluator(distance_metric: str) -> UncertaintyEvaluator:
     distance_metrics = {
         "wasserstein": WassersteinDistance,
         "euclidean": EuclideanDistance
     }
-    
+
     metric = distance_metrics.get(distance_metric.lower())
-    
+
     if not metric:
         raise ValueError("Invalid distance metric type")
-    
+
     return UncertaintyEvaluator(metric())
