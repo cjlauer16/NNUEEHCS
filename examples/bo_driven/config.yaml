@@ -11,6 +11,7 @@ training:
   batch_size: 32
   loss: l1_loss
   validation_split: 0.2
+  scaling: true
 
 benchmarks:
   binomial_options:
@@ -94,6 +95,10 @@ uq_methods:
   delta_uq:
     num_anchors: 300
     estimator: 'std'
+  pager:
+    num_anchors: 300
+    estimator: 'std'
+
 
 
 
