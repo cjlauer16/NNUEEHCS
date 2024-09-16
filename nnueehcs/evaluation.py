@@ -70,26 +70,30 @@ class UncertaintyEvaluator:
 
     def evaluate(self, model: nn.Module, id_data: tuple, ood_data: tuple) -> dict:
         import time
+        id_time = list()
+        ood_time = list()
+        unc_distances = list()
         model.eval()
         id_ipt, id_opt = id_data
         ood_ipt, ood_opt = ood_data
-        id_time = 0
-        ood_time = 0
+        trials = 5
         with torch.no_grad():
-            id_start = time.time()
-            id_preds, id_ue_raw = model(id_ipt, return_ue=True)
-            id_end = time.time()
-            ood_start = time.time()
-            ood_preds, ood_ue_raw = model(ood_ipt, return_ue=True)
-            ood_end = time.time()
+            for t in range(trials):
+                id_start = time.time()
+                id_preds, id_ue_raw = model(id_ipt, return_ue=True)
+                id_end = time.time()
+                ood_start = time.time()
+                ood_preds, ood_ue_raw = model(ood_ipt, return_ue=True)
+                ood_end = time.time()
 
-            id_time = id_end - id_start
-            ood_time = ood_end - ood_start
+                id_time.append(id_end - id_start)
+                ood_time.append(ood_end - ood_start)
 
         id_ue = UncertaintyEstimate(id_ue_raw)
         ood_ue = UncertaintyEstimate(ood_ue_raw)
 
         uncertainty_distance = self.distance_metric.distance(id_ue, ood_ue)
+        unc_distances.append(uncertainty_distance)
 
         loss_fn = model.val_loss
 
@@ -98,7 +102,7 @@ class UncertaintyEvaluator:
             "ood_loss": loss_fn(ood_preds, ood_opt).item(),
             "avg_id_uncertainty": id_ue.mean().item(),
             "avg_ood_uncertainty": ood_ue.mean().item(),
-            "uncertainty_distance": uncertainty_distance,
+            "uncertainty_distance": unc_distances,
             "uncertainty_dimensions": id_ue.dimensions,
             'id_time': id_time,
             'ood_time': ood_time,

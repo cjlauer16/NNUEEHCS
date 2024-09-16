@@ -10,14 +10,14 @@ def _inst_init_if_not_none(inst, attr, val, default):
 
 
 class Trainer(L.Trainer):
-    def __init__(self, name, trainer_config, logger=None, callbacks=None):
+    def __init__(self, name, trainer_config, logger=None, callbacks=None, version=None):
         self.name = name
         _inst_init_if_not_none(self, 'callbacks', 
                                 callbacks, [EarlyStopping(monitor='val_loss')]
                                 )
         _inst_init_if_not_none(self, 'logger', logger, 
-                                L.loggers.CSVLogger('logs', name=name)
-                                )
+                               L.loggers.CSVLogger('logs', name=name, version=version)
+                               )
 
         super().__init__(callbacks=self.callbacks, logger=self.logger, 
                          **trainer_config

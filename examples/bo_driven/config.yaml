@@ -11,7 +11,7 @@ training:
   batch_size: 32
   loss: l1_loss
   validation_split: 0.2
-  scaling: true
+  scaling: false
 
 benchmarks:
   binomial_options:
@@ -89,17 +89,51 @@ benchmarks:
 
 uq_methods:
   ensemble:
-    num_models: 8
+    parameter_space:
+      - name: num_models
+        type: range
+        bounds:
+          - 5
+          - 128
   kde:
-    bandwidth: 'scott'
+    parameter_space:
+      - name: bandwidth
+        type: fixed
+        value: 'scott'
+      - name: rtol
+        type: range
+        bounds:
+          - 0.0
+          - 1.0
   delta_uq:
-    num_anchors: 300
-    estimator: 'std'
+    - name: num_anchors
+      type: range
+      bounds:
+        - 5
+        - 300
+    - name: estimator
+      type: fixed
+      value: 'std'
   pager:
-    num_anchors: 300
-    estimator: 'std'
+    - name: num_anchors
+      type: range
+      bounds:
+        - 5
+        - 300
+    - name: estimator
+      type: fixed
+      value: 'std'
 
-
+bo_config:
+  trials: 15
+  objectives:
+  - name: ue_time
+    type: minimize
+  - name: score_dist
+    type: maximize
+  tracking_metrics:
+    - ue_time
+    - score_dist
 
 
 
