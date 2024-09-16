@@ -93,13 +93,16 @@ def get_params(config):
                               )
 
 
-def get_trainer(trainer_config, name, model, version=None):
+def get_trainer(trainer_config, name, model, ue_method, dataset, version=None, log_dir='logs'):
     callbacks = [EarlyStopping(monitor='val_loss', min_delta=0.00, patience=300, verbose=False, mode='min'),
                  ModelSavingCallback(monitor='val_loss')]
     extra_cbs = model.get_callbacks()
     if extra_cbs:
         callbacks.extend(extra_cbs)
-    return Trainer(name, trainer_config, callbacks=callbacks, version=version)
+    return Trainer(f'{name}/{dataset}/{ue_method}', trainer_config, 
+                   callbacks=callbacks, log_dir=log_dir, 
+                   version=version
+                   )
 
 
 def get_id_datset_name(dataset_name):
@@ -181,7 +184,8 @@ def evaluate(model, id_dset, ood_dset):
 @click.option('--benchmark')
 @click.option('--uq_method')
 @click.option('--dataset', type=click.Choice(['tails', 'gaps']))
-def main(benchmark, uq_method, dataset):
+@click.option('--output', type=click.Path(), help="Name of output directory")
+def main(benchmark, uq_method, dataset, output):
     with open('config.yaml') as f:
         config = yaml.safe_load(f)
         trainer_cfg = config['trainer']
@@ -210,7 +214,9 @@ def main(benchmark, uq_method, dataset):
         dset = get_dataset(dataset_cfg, dataset)
         dset = prepare_dset_for_use(dset, training_cfg)
         model = build_model(model_cfg, uq_config, uq_method).to(dset.dtype)
-        trainer = get_trainer(trainer_cfg, name, model, version=f'bo_trial_{bo_trial}')
+        trainer = get_trainer(trainer_cfg, name, model, uq_method, dataset,
+                              version=f'bo_trial_{bo_trial}',
+                              log_dir=output)
         opt_manager = OutputManager(trainer.logger.log_dir, benchmark, append_benchmark_name=False)
 
         train_dl = DataLoader(dset, batch_size=training_cfg['batch_size'], shuffle=True)
@@ -256,29 +262,28 @@ def main(benchmark, uq_method, dataset):
             trial_results[index]['ood_time'] = np.mean(results['ood_time'])
             trial_results[index]['log_path'] = f'{trainer.logger.log_dir}'
             print(trial_results)
+            fig, ax = plt.subplots()
+            ax.ecdf(id_ue.data.flatten(), label='ID')
+            ax.ecdf(ood_ue.data.flatten(), label='OOD')
+            ax.legend()
+            # save it to png file
+            plt.savefig('uncertainty.png')
+            plt.clf()
+            fig, ax = plt.subplots()
+
+            ax.ecdf(id_ue.data[1].flatten(), label='ID')
+            ax.ecdf(ood_ue.data[1].flatten(), label='OOD')
+            ax.legend()
+            # save it to png file
+            plt.savefig('uncertainty_1.png')
+
         opt_manager.save_trial_results_dict(trial_results)
         opt_manager.save_optimization_state(index, ax_client)
-
 
     pareto_results = ax_client.get_pareto_optimal_parameters(use_model_predictions=False)
     pareto_predictions = ax_client.get_pareto_optimal_parameters(use_model_predictions=True)
     pareto = {'results': pareto_results, 'predictions': pareto_predictions}
     opt_manager.save_pareto_parameters(json.dumps(pareto))
-    fig, ax = plt.subplots()
-    ax.ecdf(id_ue.data.flatten(), label='ID')
-    ax.ecdf(ood_ue.data.flatten(), label='OOD')
-    ax.legend()
-    # save it to png file
-    plt.savefig('uncertainty.png')
-    plt.clf()
-    fig, ax = plt.subplots()
-
-    ax.ecdf(id_ue.data[1].flatten(), label='ID')
-    ax.ecdf(ood_ue.data[1].flatten(), label='OOD')
-    ax.legend()
-    # save it to png file
-    plt.savefig('uncertainty_1.png')
-
 
 if __name__ == '__main__':
     main()
