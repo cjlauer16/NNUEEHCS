@@ -254,6 +254,7 @@ def main(benchmark, uq_method, dataset, output):
                             'score_dist': (unc_dist_mean, unc_dist_std)}
             ax_client.complete_trial(trial_index=index, raw_data=trial_result)
             trial_results[index] = dict()
+            trial_results[index].update(trial)
             trial_results[index]['ue_time'] = ue_mean
             trial_results[index]['score_dist'] = unc_dist_mean
             trial_results[index]['id_ue'] = id_ue.mean()
