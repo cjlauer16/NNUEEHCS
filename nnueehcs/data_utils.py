@@ -196,7 +196,7 @@ class CharacterDelimitedDataset(DatasetCommon, Dataset):
             df = pd.read_csv(path, delimiter=delimiter)
         else:
             df = pd.read_csv(path, delimiter=delimiter, header=None)
-        return df.iloc[:, :-1].values, df.iloc[:, -1].values
+        return df.iloc[:, :-1].values, np.expand_dims(df.iloc[:, -1].values, -1)
 
     def file_has_header(self, path, sep):
         if isinstance(path, str):
