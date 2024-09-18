@@ -264,19 +264,32 @@ def main(benchmark, uq_method, dataset, output):
             trial_results[index]['log_path'] = f'{trainer.logger.log_dir}'
             print(trial_results)
             fig, ax = plt.subplots()
-            ax.ecdf(id_ue.data.flatten(), label='ID')
-            ax.ecdf(ood_ue.data.flatten(), label='OOD')
+            if isinstance(id_ue.data, tuple):
+                firstdata_id = id_ue.data[0]
+                firstdata_ood = ood_ue.data[0]
+
+                seconddata_id = id_ue.data[1]
+                seconddata_ood = ood_ue.data[1]
+            else:
+                firstdata_id = id_ue.data
+                firstdata_ood = ood_ue.data
+
+                seconddata_id = id_ue.data
+                seconddata_ood = ood_ue.data
+
+            ax.ecdf(firstdata_id.flatten(), label='ID')
+            ax.ecdf(firstdata_ood.flatten(), label='OOD')
             ax.legend()
             # save it to png file
-            plt.savefig('uncertainty.png')
+            plt.savefig(f'{trainer.logger.log_dir}/uncertainty.png')
             plt.clf()
             fig, ax = plt.subplots()
 
-            ax.ecdf(id_ue.data[1].flatten(), label='ID')
-            ax.ecdf(ood_ue.data[1].flatten(), label='OOD')
+            ax.ecdf(seconddata_id.flatten(), label='ID')
+            ax.ecdf(seconddata_ood.flatten(), label='OOD')
             ax.legend()
             # save it to png file
-            plt.savefig('uncertainty_1.png')
+            plt.savefig(f'{trainer.logger.log_dir}/uncertainty_1.png')
 
         opt_manager.save_trial_results_dict(trial_results)
         opt_manager.save_optimization_state(index, ax_client)
