@@ -86,6 +86,81 @@ benchmarks:
           output_dataset: output
           percentiles: '[30, 60]'
 
+  minibude:
+      model:
+        architecture:
+          - Linear:
+              args: [6, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 1]
+
+      datasets:
+        tails_id:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_1048576_train.h5'
+          group_name: BUDEKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[0, 70]'
+        tails_ood:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_1048576_train.h5'
+          group_name: BUDEKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[70, 100]'
+        gaps_id:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_1048576_train.h5'
+          group_name: BUDEKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[0, 30], [60, 100]'
+        gaps_ood:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_1048576_train.h5'
+          group_name: BUDEKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[30, 60]'
+
+
+
+
   ailerons:
     model:
       architecture:
