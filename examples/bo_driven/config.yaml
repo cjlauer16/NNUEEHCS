@@ -1,0 +1,403 @@
+---
+trainer:
+  accelerator: gpu
+  max_epochs: 20
+  limit_train_batches: 1000
+  limit_val_batches: 100
+  log_every_n_steps: 5
+  num_sanity_val_steps: 0
+  gradient_clip_val: 5
+training:
+  batch_size: 32
+  loss: l1_loss
+  validation_split: 0.2
+  scaling: true
+
+benchmarks:
+  binomial_options:
+      model:
+        architecture:
+          - Linear:
+              args: [5, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 1]
+
+      datasets:
+        tails_id:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/binomial_options_16777216.h5'
+          group_name: BinomialOptionsKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[0, 70]'
+        tails_ood:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/binomial_options_16777216.h5'
+          group_name: BinomialOptionsKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[70, 100]'
+        gaps_id:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/binomial_options_16777216.h5'
+          group_name: BinomialOptionsKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[0, 30], [60, 100]'
+        gaps_ood:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/binomial_options_16777216.h5'
+          group_name: BinomialOptionsKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[30, 60]'
+
+  minibude:
+      model:
+        architecture:
+          - Linear:
+              args: [6, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 128]
+          - BatchNorm1d:
+              args: [128]
+          - ReLU:
+              inplace: true
+          - Linear:
+              args: [128, 1]
+
+      datasets:
+        tails_id:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_1048576_train.h5'
+          group_name: BUDEKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[0, 70]'
+        tails_ood:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_1048576_train.h5'
+          group_name: BUDEKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[70, 100]'
+        gaps_id:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_1048576_train.h5'
+          group_name: BUDEKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[0, 30], [60, 100]'
+        gaps_ood:
+          format: hdf5
+          path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_1048576_train.h5'
+          group_name: BUDEKernel
+          input_dataset: input
+          output_dataset: output
+          percentiles: '[30, 60]'
+
+
+
+
+  ailerons:
+    model:
+      architecture:
+        - Linear:
+            args: [40, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 1]
+
+    datasets:
+      tails_id:
+        format: arff
+        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/ailerons.arff
+        percentiles: '[0, 70]'
+      tails_ood:
+        format: arff
+        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/ailerons.arff
+        percentiles: '[70, 100]'
+
+      gaps_id:
+        format: arff
+        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/ailerons.arff
+        percentiles: '[0, 30], [60, 100]'
+      gaps_ood:
+        format: arff
+        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/ailerons.arff
+        percentiles: '[30, 60]'
+
+
+  airfoil:
+    model:
+      architecture:
+        - Linear:
+            args: [5, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 1]
+
+    datasets:
+      tails_id:
+        format: character_delimited
+        delimiter: '\s+'
+        path: /scratch/mzu/zanef2/surrogates/training_data/airfoil_self_noise.dat
+        percentiles: '[0, 70]'
+      tails_ood:
+        format: character_delimited
+        delimiter: '\s+'
+        path: /scratch/mzu/zanef2/surrogates/training_data/airfoil_self_noise.dat
+        percentiles: '[70, 100]'
+      gaps_id:
+        format: character_delimited
+        delimiter: '\s+'
+        path: /scratch/mzu/zanef2/surrogates/training_data/airfoil_self_noise.dat
+        percentiles: '[0, 30], [60, 100]'
+      gaps_ood:
+        format: character_delimited
+        delimiter: '\s+'
+        path: /scratch/mzu/zanef2/surrogates/training_data/airfoil_self_noise.dat
+        percentiles: '[30, 60]'
+
+
+  puma:
+    model:
+      architecture:
+        - Linear:
+            args: [8, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 1]
+
+    datasets:
+      tails_id:
+        format: character_delimited
+        delimiter: '\s+'
+        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/pumadyn-8fm/Dataset.data
+        percentiles: '[0, 70]'
+      tails_ood:
+        format: character_delimited
+        delimiter: '\s+'
+        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/pumadyn-8fm/Dataset.data
+        percentiles: '[70, 100]'
+      gaps_id:
+        format: character_delimited
+        delimiter: '\s+'
+        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/pumadyn-8fm/Dataset.data
+        percentiles: '[0, 30], [60, 100]'
+      gaps_ood:
+        format: character_delimited
+        delimiter: '\s+'
+        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/pumadyn-8fm/Dataset.data
+        percentiles: '[30, 60]'
+
+uq_methods:
+  ensemble:
+    parameter_space:
+      - name: num_models
+        type: range
+        bounds:
+          - 5
+          - 128
+  kde:
+    parameter_space:
+      - name: bandwidth
+        type: fixed
+        value: 'scott'
+      - name: rtol
+        type: range
+        bounds:
+          - 0.0
+          - 1.0
+  delta_uq:
+    parameter_space:
+      - name: num_anchors
+        type: range
+        bounds:
+          - 5
+          - 300
+      - name: estimator
+        type: fixed
+        value: 'std'
+  pager:
+    parameter_space:
+      - name: num_anchors
+        type: range
+        bounds:
+          - 5
+          - 300
+      - name: estimator
+        type: fixed
+        value: 'std'
+
+bo_config:
+  trials: 15
+  objectives:
+  - name: ue_time
+    type: minimize
+  - name: score_dist
+    type: maximize
+  tracking_metrics:
+    - ue_time
+    - score_dist
