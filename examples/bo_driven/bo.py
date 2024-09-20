@@ -94,7 +94,7 @@ def get_params(config):
 
 
 def get_trainer(trainer_config, name, model, ue_method, dataset, version=None, log_dir='logs'):
-    callbacks = [EarlyStopping(monitor='val_loss', min_delta=0.00, patience=300, verbose=False, mode='min'),
+    callbacks = [EarlyStopping(monitor='val_loss', min_delta=0.00, patience=30, verbose=False, mode='min'),
                  ModelSavingCallback(monitor='val_loss')]
     extra_cbs = model.get_callbacks()
     if extra_cbs:

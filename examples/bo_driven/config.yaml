@@ -223,6 +223,71 @@ benchmarks:
         percentiles: '[30, 60]'
 
 
+  airfoil:
+    model:
+      architecture:
+        - Linear:
+            args: [5, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 128]
+        - BatchNorm1d:
+            args: [128]
+        - ReLU:
+            inplace: true
+        - Linear:
+            args: [128, 1]
+
+    datasets:
+      tails_id:
+        format: character_delimited
+        delimiter: '\s+'
+        path: /scratch/mzu/zanef2/surrogates/training_data/airfoil_self_noise.dat
+        percentiles: '[0, 70]'
+      tails_ood:
+        format: character_delimited
+        delimiter: '\s+'
+        path: /scratch/mzu/zanef2/surrogates/training_data/airfoil_self_noise.dat
+        percentiles: '[70, 100]'
+      gaps_id:
+        format: character_delimited
+        delimiter: '\s+'
+        path: /scratch/mzu/zanef2/surrogates/training_data/airfoil_self_noise.dat
+        percentiles: '[0, 30], [60, 100]'
+      gaps_ood:
+        format: character_delimited
+        delimiter: '\s+'
+        path: /scratch/mzu/zanef2/surrogates/training_data/airfoil_self_noise.dat
+        percentiles: '[30, 60]'
+
+
   puma:
     model:
       architecture:
