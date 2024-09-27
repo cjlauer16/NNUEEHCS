@@ -74,7 +74,8 @@ class WrappedModelBase(pl.LightningModule):
         self.logger.log_hyperparams(all_params)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=5e-5)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.train_config['learning_rate'],
+                                      weight_decay=self.train_config.get('weight_decay', 0))
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')
         return {'optimizer': optimizer, 'lr_scheduler': scheduler, 'monitor': 'val_loss'}
 
