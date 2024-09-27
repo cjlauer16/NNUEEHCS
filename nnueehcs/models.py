@@ -95,6 +95,27 @@ class EnsembleModel(WrappedModelBase):
         return outputs.mean(0)
 
 
+class MCDropoutModel(WrappedModelBase):
+    def __init__(self, model, num_samples=100, dropout_percent = 0.5, **kwargs):
+        super(MCDropoutModel, self).__init__(**kwargs)
+        self.model = model
+        self.num_samples = num_samples
+        self.dropout_perent = dropout_percent
+
+
+    def forward(self, x, return_ue=False):
+        preds = torch.stack([self.model(x) for _ in range(self.num_samples)])
+        if return_ue:
+            return preds.mean(0), preds.std(0)
+        return preds.mean(0)
+
+
+    def eval(self):
+        super().eval()
+        for module in self.model.modules():
+            if isinstance(module, nn.Dropout):
+                module.train()
+
 class MLPModel(WrappedModelBase):
     def __init__(self, model, **kwargs):
         super(MLPModel, self).__init__(**kwargs)
@@ -108,7 +129,7 @@ class KDEMLPModel(MLPModel):
     def __init__(self, base_model, bandwidth='scott', rtol=0.1, train_fit_prop=1.0, **kwargs):
         super(KDEMLPModel, self).__init__(base_model, **kwargs)
         self.bandwidth = bandwidth
-        self.rtol = rtol
+        self.rtol = rtol/10000
         self.kde = None
         self.train_fit_prop = train_fit_prop
 

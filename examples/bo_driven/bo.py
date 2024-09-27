@@ -2,7 +2,9 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 import sys
-from nnueehcs.model_builder import EnsembleModelBuilder, KDEModelBuilder, DeltaUQMLPModelBuilder, PAGERModelBuilder
+from nnueehcs.model_builder import (EnsembleModelBuilder, KDEModelBuilder, 
+                                    DeltaUQMLPModelBuilder, PAGERModelBuilder, 
+                                    MCDropoutModelBuilder)
 from nnueehcs.training import Trainer, ModelSavingCallback
 from nnueehcs.data_utils import get_dataset_from_config
 from nnueehcs.evaluation import get_uncertainty_evaluator
@@ -122,14 +124,17 @@ def get_model_builder_class(uq_method):
         return DeltaUQMLPModelBuilder
     elif uq_method == 'pager':
         return PAGERModelBuilder
+    elif uq_method == 'mc_dropout':
+        return MCDropoutModelBuilder
     else:
         raise ValueError(f'Unknown uq method {uq_method}')
 
 
-def build_model(model_cfg, uq_config, uq_method):
+def build_model(model_cfg, uq_config, uq_method, train_cfg):
     builder_class = get_model_builder_class(uq_method)
     builder = builder_class(model_cfg['architecture'],
-                            uq_config[uq_method]
+                            uq_config[uq_method],
+                            train_config = train_cfg
                             )
     return builder.build()
 
@@ -195,8 +200,10 @@ def main(benchmark, uq_method, dataset, output):
         uq_config = config['uq_methods']
         bo_config = config['bo_config']
         bo_config.update(uq_config[uq_method])
+        bo_config['parameter_space'] += training_cfg['parameter_space']
 
     bo_params = get_params(bo_config)
+    del training_cfg['parameter_space']
     del uq_config[uq_method]['parameter_space']
     name = benchmark
     ax_client = AxClient()
@@ -209,11 +216,21 @@ def main(benchmark, uq_method, dataset, output):
     trial_results = dict()
     for bo_trial in range(bo_config['trials']):
         trial, index = ax_client.get_next_trial()
+        lr = trial['learning_rate']
+        bs = trial['batch_size']
+        wd = trial.get('weight_decay', 0.0)
+        del trial['learning_rate']
+        del trial['batch_size']
+        if 'weight_decay' in trial:
+            del trial['weight_decay']
+        training_cfg['learning_rate'] = lr
+        training_cfg['batch_size'] = bs
+        training_cfg['weight_decay'] = wd
         uq_config[uq_method].update(trial)
 
         dset = get_dataset(dataset_cfg, dataset)
         dset = prepare_dset_for_use(dset, training_cfg)
-        model = build_model(model_cfg, uq_config, uq_method).to(dset.dtype)
+        model = build_model(model_cfg, uq_config, uq_method, training_cfg).to(dset.dtype)
         trainer = get_trainer(trainer_cfg, name, model, uq_method, dataset,
                               version=f'bo_trial_{bo_trial}',
                               log_dir=output)
@@ -250,15 +267,18 @@ def main(benchmark, uq_method, dataset, output):
             unc_dist_mean = unc_dist.mean()
             unc_dist_std = unc_dist.std()
 
-            trial_result = {'ue_time': (ue_mean, ue_std),
+            trial_result = {#'ue_time': (ue_mean, ue_std),
                             'score_dist': (unc_dist_mean, unc_dist_std)}
             ax_client.complete_trial(trial_index=index, raw_data=trial_result)
             trial_results[index] = dict()
             trial_results[index].update(trial)
             trial_results[index]['ue_time'] = ue_mean
+            trial_results[index]['learning_rate'] = lr
             trial_results[index]['score_dist'] = unc_dist_mean
             trial_results[index]['id_ue'] = id_ue.mean()
             trial_results[index]['ood_ue'] = ood_ue.mean()
+            trial_results[index]['id_loss'] = results['id_loss']
+            trial_results[index]['ood_loss'] = results['ood_loss']
             trial_results[index]['id_time'] = np.mean(results['id_time'])
             trial_results[index]['ood_time'] = np.mean(results['ood_time'])
             trial_results[index]['log_path'] = f'{trainer.logger.log_dir}'

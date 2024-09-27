@@ -2,7 +2,7 @@ import torch.nn
 import collections
 import io
 import yaml
-from .models import MLPModel, KDEMLPModel, DeltaUQMLP, EnsembleModel, PAGERMLP
+from .models import MLPModel, KDEMLPModel, DeltaUQMLP, EnsembleModel, PAGERMLP, MCDropoutModel
 import copy
 import types
 
@@ -128,9 +128,10 @@ class ModelInfo:
 
 
 class ModelBuilder:
-    def __init__(self, model_descr, train_config=None):
+    def __init__(self, model_descr, **kwargs):
         self.model_descr = copy.deepcopy(model_descr)
-        self.train_config = train_config
+        if 'train_config' in kwargs:
+            self.train_config = kwargs['train_config']
 
     def build(self):
         built = build_network(self.model_descr)
@@ -164,7 +165,9 @@ class DeltaUQMLPModelBuilder(ModelBuilder):
         self.update_info(self.get_info())
         base_model = super().build()
         print(base_model)
-        return DeltaUQMLP(base_model, **self.duq_descr)
+        return DeltaUQMLP(base_model, 
+                          train_config=self.train_config,
+                          **self.duq_descr)
 
     def update_info(self, info):
 
@@ -190,7 +193,9 @@ class PAGERModelBuilder(ModelBuilder):
     def build(self):
         self.update_info(self.get_info())
         base_model = super().build()
-        return PAGERMLP(base_model, **self.pager_descr)
+        return PAGERMLP(base_model, 
+                        train_config=self.train_config,
+                        **self.pager_descr)
 
     def update_info(self, info):
         estimator = self.pager_descr['estimator']
@@ -222,6 +227,42 @@ class EnsembleModelBuilder(ModelBuilder):
         def get_num_models(self):
             return num_models
         info.get_num_models = types.MethodType(get_num_models, info)
+
+
+class MCDropoutModelBuilder(ModelBuilder):
+    def __init__(self, base_descr, dropout_descr, **kwargs):
+        super().__init__(base_descr, **kwargs)
+        self.dropout_descr = dropout_descr
+
+    def build(self):
+        modified_net = self._add_dropout(self.model_descr, self.dropout_descr)
+        self.model_descr = modified_net
+        return MCDropoutModel(super().build(),
+                                 train_config=self.train_config,
+                                 **self.dropout_descr
+                                 )
+
+    def _add_dropout(self, model_descr, dropout_descr):
+        new_model = list()
+        dropout_layer = {'Dropout': {'args': [dropout_descr['dropout_percent']]}}
+        new_model.append(model_descr[0])
+        for layer in model_descr[1:-1:]:
+            if layer.get('Linear') or layer.get('Conv2d'):
+                new_model.append(dropout_layer)
+            new_model.append(layer)
+        new_model.append(model_descr[-1])
+        return new_model
+
+    def update_info(self, info):
+        num_samples = self.dropout_descr['num_samples']
+        dropout_percent = self.dropout_descr['dropout_percent']
+
+        def get_num_samples(self):
+            return num_samples
+        def get_dropout_percent(self):
+            return dropout_percent
+        info.get_num_samples = types.MethodType(get_num_samples, info)
+        info.get_dropout_percent = types.MethodType(get_dropout_percent, info)
 
 
 class KDEModelBuilder(ModelBuilder):

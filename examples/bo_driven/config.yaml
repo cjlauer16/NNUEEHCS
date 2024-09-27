@@ -1,15 +1,33 @@
 ---
 trainer:
   accelerator: gpu
-  max_epochs: 20
+  max_epochs: 300
   limit_train_batches: 1000
   limit_val_batches: 100
   log_every_n_steps: 5
   num_sanity_val_steps: 0
   gradient_clip_val: 5
 training:
-  batch_size: 32
   loss: l1_loss
+  parameter_space:
+    - name: learning_rate
+      type: range
+      bounds:
+        - 0.000001
+        - 0.01
+      log_scale: true
+    - name: weight_decay
+      type: range
+      bounds:
+        - 0.000001
+        - 0.01
+      log_scale: true
+    - name: batch_size
+      type: range
+      bounds:
+        - 16
+        - 128
+    
   validation_split: 0.2
   scaling: true
 
@@ -358,8 +376,8 @@ uq_methods:
       - name: num_models
         type: range
         bounds:
-          - 5
-          - 128
+          - 2
+          - 32
   kde:
     parameter_space:
       - name: bandwidth
@@ -367,16 +385,19 @@ uq_methods:
         value: 'scott'
       - name: rtol
         type: range
+        # for some reason, ax doesn't suggest very diverse values when
+        # we give a range like 0.05, 0.5.
+        # We'll do this instead and convert in the impl.
         bounds:
-          - 0.0
-          - 1.0
+          - 500
+          - 5000
   delta_uq:
     parameter_space:
       - name: num_anchors
         type: range
         bounds:
-          - 5
-          - 300
+          - 2
+          - 150
       - name: estimator
         type: fixed
         value: 'std'
@@ -385,14 +406,26 @@ uq_methods:
       - name: num_anchors
         type: range
         bounds:
-          - 5
+          - 2
           - 300
       - name: estimator
         type: fixed
         value: 'std'
+  mc_dropout:
+    parameter_space:
+      - name: num_samples
+        type: range
+        bounds:
+          - 5
+          - 32
+      - name: dropout_percent
+        type: range
+        bounds: 
+          - 0.05
+          - 0.3
 
 bo_config:
-  trials: 15
+  trials: 100
   objectives:
   - name: ue_time
     type: minimize

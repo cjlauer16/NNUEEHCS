@@ -4,7 +4,8 @@ from nnueehcs.model_builder import (build_network, ModelBuilder,
                                     EnsembleModelBuilder,
                                     PAGERModelBuilder,
                                     KDEModelBuilder,
-                                    KDEMLPModel)
+                                    KDEMLPModel,
+                                    MCDropoutModelBuilder)
 import torch
 import io
 import yaml
@@ -115,9 +116,28 @@ architecture2:
         inplace: True
     - Linear:
         args: [25, 5]
+
+architecture3:
+    - Linear:
+        args: [16, 25]
+    - ReLU:
+        inplace: true
+    - Linear:
+        args: [25, 25]
+    - ReLU:
+        inplace: true
+    - Linear:
+        args: [25, 25]
+    - ReLU:
+        inplace: true
+    - Linear:
+        args: [25, 5]
 delta_uq_model:
     estimator: std
     num_anchors: 2
+mc_dropout_model:
+    num_samples: 10
+    dropout_percent: 0.2
 pager_model:
     estimator: std
     num_anchors: 3
@@ -268,3 +288,47 @@ def test_kde_model_builder(model_descr_yaml, kde_architecture1, kde_architecture
     assert info2.num_inputs() == 16
 
     assert not hasattr(info, 'get_estimator')
+
+def test_mc_model_builder(model_descr_yaml, architecture1, architecture2):
+    model_descr = yaml.safe_load(io.StringIO(model_descr_yaml))
+    model_builder = MCDropoutModelBuilder(model_descr['architecture3'],
+                                          model_descr['mc_dropout_model'])
+    arch1 = model_builder.build()
+    expected = """
+MCDropoutModel(
+  (model): Sequential(
+    (0): Linear(in_features=16, out_features=25, bias=True)
+    (1): ReLU(inplace=True)
+    (2): Dropout(p=0.2, inplace=False)
+    (3): Linear(in_features=25, out_features=25, bias=True)
+    (4): ReLU(inplace=True)
+    (5): Dropout(p=0.5, inplace=False)
+    (6): Linear(in_features=25, out_features=25, bias=True)
+    (7): ReLU(inplace=True)
+    (8): Linear(in_features=25, out_features=5, bias=True)
+  )
+)
+"""
+    assert str(arch1).strip() == expected.strip()
+    arch1.eval()
+    for layer in arch1.model:
+        if isinstance(layer, nn.Dropout):
+            assert layer.training == True
+        else:
+            assert layer.training == False
+    arch1.train()
+    for layer in arch1.model:
+        assert layer.training == True
+
+    model_builder = MCDropoutModelBuilder(model_descr['architecture2'],
+                                          model_descr['mc_dropout_model'])
+    arch2 = model_builder.build()
+    arch2.eval()
+    for layer in arch2.model:
+        if isinstance(layer, nn.Dropout):
+            assert layer.training == True
+        else:
+            assert layer.training == False
+    arch2.train()
+    for layer in arch2.model:
+        assert layer.training == True
