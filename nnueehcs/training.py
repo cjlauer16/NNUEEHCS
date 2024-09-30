@@ -1,6 +1,7 @@
 import pytorch_lightning as L
 import torch
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.plugins.environments import LightningEnvironment
 
 def _inst_init_if_not_none(inst, attr, val, default):
     if val is not None:
@@ -20,7 +21,8 @@ class Trainer(L.Trainer):
                                )
 
         super().__init__(callbacks=self.callbacks, logger=self.logger, 
-                         **trainer_config
+                         **trainer_config,
+                         plugins=LightningEnvironment()
                          )
         self.logger.log_hyperparams(trainer_config)
 

@@ -11,6 +11,8 @@ from nnueehcs.evaluation import get_uncertainty_evaluator
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks import ModelCheckpoint
 import pytorch_lightning as L
+from pytorch_lightning.plugins.environments import SLURMEnvironment
+SLURMEnvironment.detect = lambda: False
 from ax.service.ax_client import AxClient, ObjectiveProperties
 import yaml
 import click
@@ -191,6 +193,16 @@ def evaluate(model, id_dset, ood_dset):
 @click.option('--dataset', type=click.Choice(['tails', 'gaps']))
 @click.option('--output', type=click.Path(), help="Name of output directory")
 def main(benchmark, uq_method, dataset, output):
+    import os
+    try:
+        os.unsetenv('SLURM_CPU_BIND')
+        os.unsetenv('SLURM_CPU_BIND_LIST')
+        os.unsetenv('SLURM_CPUS_ON_NODE')
+        os.unsetenv('SLURM_CPUS_PER_TASK')
+        os.unsetenv('SLURM_CPU_BIND_TYPE')
+        os.unsetenv('SLURM_JOB_NAME')
+    except KeyError:
+        pass
     with open('config.yaml') as f:
         config = yaml.safe_load(f)
         trainer_cfg = config['trainer']
