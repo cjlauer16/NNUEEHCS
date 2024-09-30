@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import re
 from torch.utils.data import DataLoader
 import sys
 from nnueehcs.model_builder import (EnsembleModelBuilder, KDEModelBuilder, 
@@ -35,6 +36,9 @@ class OutputManager:
         self.output_dir_path = Path(self.output_dir_name)
         self.output_dir_path.mkdir(parents=True, exist_ok=True)
 
+    def set_output_dir(self, output_dir):
+        self.output_dir_path = output_dir
+
     @classmethod
     def get_datetime_prefix(cls):
         return datetime.now().strftime("%Y-%m-%d")
@@ -62,8 +66,64 @@ class OutputManager:
         trial_results_df.index.name = 'trial'
         self.save_trial_results_df(trial_results_df, name)
 
+    def get_optimization_step(self):
+        with open(f'{str(self.output_dir_path)}/ax_client_optimization_step.json', 'r') as f:
+            return json.load(f)['optimization_step']
+
+    def get_optimization_state(self):
+        with open(f'{str(self.output_dir_path)}/ax_client.json', 'r') as f:
+            return json.load(f)
+
+    def get_optimization_state_file(self):
+        return f'{str(self.output_dir_path)}/ax_client.json'
+
+    def get_trial_results(self):
+        return pd.read_csv(f'{str(self.output_dir_path)}/trial_results.csv')
+
     def get_output_dir(self):
         return self.output_dir_path
+
+    def output_exists(self):
+        return self.output_dir_path.exists()
+
+    def run_completed(self, run_index):
+        opt_dir = self.output_dir_path
+        opt_dir_base, run_str = opt_dir.parent, opt_dir.name
+        opt_dir_base_children = [x.name for x in opt_dir_base.iterdir()]
+        run_prefix = self._get_run_prefix(run_str)
+
+        target_dir = Path(f'{opt_dir_base}/{run_prefix}{run_index}')
+        td_exists = target_dir.name in opt_dir_base_children
+        if td_exists is False:
+            return False
+
+        ax_client_exists = 'ax_client.json' in [item.name for item in target_dir.iterdir()]
+        optimization_step_exists = 'ax_client_optimization_step.json' in [item.name for item in target_dir.iterdir()]
+        results_exist = 'trial_results.csv' in [item.name for item in target_dir.iterdir()]
+
+        return all([ax_client_exists, optimization_step_exists, results_exist])
+
+    def get_restart_index(self):
+        opt_dir = self.output_dir_path
+        opt_dir_base = opt_dir.parent
+
+        for item in opt_dir_base.iterdir():
+            if self._is_run_directory(item.name):
+                run_index = self._get_run_index(item.name)
+                if self.run_completed(run_index):
+                    continue
+                return run_index
+
+
+    def _get_run_index(self, run_str):
+        return int(re.search(r'\d+', run_str).group())
+
+    def _is_run_directory(self, run_str):
+        return re.match(r'bo_trial_\d+', run_str) is not None
+
+    def _get_run_prefix(self, run_dir):
+        run_re = re.compile(r'(\S+_)+(\d+)')
+        return run_re.match(run_dir).group(1)
 
 
 @dataclass
@@ -186,13 +246,37 @@ def evaluate(model, id_dset, ood_dset):
     eval = get_uncertainty_evaluator('wasserstein')
     return eval.evaluate(model, (id_ipt, id_opt), (ood_ipt, ood_opt))
 
+def get_restart(output_dir, name, dataset, uq_method):
+    ld_name = f'{name}/{dataset}/{uq_method}'
+    logdir = Trainer.get_default_logdir(output_dir, ld_name, 'bo_trial_0')
+    opt_mgr = OutputManager(logdir, name, append_benchmark_name=False)
+    restart_idx = opt_mgr.get_restart_index()
+
+    if restart_idx == 0:
+        raise ValueError(f'No restart index found in {logdir}')
+
+    successful_trial_idx = restart_idx - 1
+    logdir_trial = Trainer.get_default_logdir(output_dir, ld_name, f'bo_trial_{successful_trial_idx}')
+    opt_mgr = OutputManager(logdir_trial, name, append_benchmark_name=False)
+
+    ostep = opt_mgr.get_optimization_step()
+    assert ostep == successful_trial_idx
+    ostate_file = opt_mgr.get_optimization_state_file()
+    ax_client = AxClient.load_from_json_file(ostate_file)
+    tresults = opt_mgr.get_trial_results()
+    tresults = tresults.set_index('trial').to_dict(orient='index')
+
+    return restart_idx, ax_client, tresults
+
+
 
 @click.command()
 @click.option('--benchmark')
 @click.option('--uq_method')
 @click.option('--dataset', type=click.Choice(['tails', 'gaps']))
 @click.option('--output', type=click.Path(), help="Name of output directory")
-def main(benchmark, uq_method, dataset, output):
+@click.option('--restart', is_flag=True, default=False, help="Restart from a previous run found in output directory")
+def main(benchmark, uq_method, dataset, output, restart):
     import os
     try:
         os.unsetenv('SLURM_CPU_BIND')
@@ -218,15 +302,21 @@ def main(benchmark, uq_method, dataset, output):
     del training_cfg['parameter_space']
     del uq_config[uq_method]['parameter_space']
     name = benchmark
-    ax_client = AxClient()
-    ax_client.create_experiment(name="UE Tuning",
-                                parameters=bo_params.parameter_space,
-                                objectives=bo_params.objectives,
-                                tracking_metric_names=bo_params.tracking_metric_names,
-                                outcome_constraints=bo_params.parameter_constraints
-                               )
-    trial_results = dict()
-    for bo_trial in range(bo_config['trials']):
+
+    try:
+        bo_idx, ax_client, trial_results = get_restart(output, name, dataset, uq_method)
+        print(f'Restarting from trial {bo_idx}')
+    except ValueError:
+        bo_idx = 0
+        trial_results = dict()
+        ax_client = AxClient()
+        ax_client.create_experiment(name="UE Tuning",
+                                    parameters=bo_params.parameter_space,
+                                    objectives=bo_params.objectives,
+                                    tracking_metric_names=bo_params.tracking_metric_names,
+                                    outcome_constraints=bo_params.parameter_constraints
+                                   )
+    for bo_trial in range(bo_idx, bo_config['trials']):
         trial, index = ax_client.get_next_trial()
         lr = trial['learning_rate']
         bs = trial['batch_size']

@@ -40,7 +40,8 @@ def run_bo(benchmark, uq_method, dataset, output,
     command = python.bake('bo.py', '--benchmark', benchmark, 
                           '--uq_method', uq_method, 
                           '--dataset', dataset, 
-                          '--output', output
+                          '--output', output,
+                          '--restart'
                           )
     print(str(command))
     return str(command)
@@ -69,13 +70,13 @@ def main(config, output, parsl_rundir):
         parallelism=1,
         exclusive=False,
         mem_per_node=64,
-        walltime="2:55:00",
+        walltime="8:55:00",
         cmd_timeout=500,
         launcher=SingleNodeLauncher()
     )
 
     parsl_config = Config(
-        retries=2,
+        retries=5,
         run_dir=parsl_rundir,
         executors=[
             HighThroughputExecutor(

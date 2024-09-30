@@ -32,6 +32,11 @@ class Trainer(L.Trainer):
     def get_callbacks(self):
         return self.callbacks
 
+    @classmethod
+    def get_default_logdir(cls, dir, name, version):
+        return L.loggers.CSVLogger(dir, name=name, version=version).log_dir
+        
+
 
 class ModelSavingCallback(L.callbacks.Callback):
     def __init__(self, monitor = "val_loss", save_path=None, model_name='model.pth'):
