@@ -2,6 +2,7 @@ import torch
 from torch import nn
 import re
 from torch.utils.data import DataLoader
+import time
 import sys
 from nnueehcs.model_builder import (EnsembleModelBuilder, KDEModelBuilder, 
                                     DeltaUQMLPModelBuilder, PAGERModelBuilder, 
@@ -273,10 +274,11 @@ def get_restart(output_dir, name, dataset, uq_method):
 @click.command()
 @click.option('--benchmark')
 @click.option('--uq_method')
+@click.option('--config', default='config.yaml')
 @click.option('--dataset', type=click.Choice(['tails', 'gaps']))
 @click.option('--output', type=click.Path(), help="Name of output directory")
 @click.option('--restart', is_flag=True, default=False, help="Restart from a previous run found in output directory")
-def main(benchmark, uq_method, dataset, output, restart):
+def main(benchmark, uq_method, config, dataset, output, restart):
     import os
     try:
         os.unsetenv('SLURM_CPU_BIND')
@@ -287,7 +289,7 @@ def main(benchmark, uq_method, dataset, output, restart):
         os.unsetenv('SLURM_JOB_NAME')
     except KeyError:
         pass
-    with open('config.yaml') as f:
+    with open(config) as f:
         config = yaml.safe_load(f)
         trainer_cfg = config['trainer']
         training_cfg = config['training']
@@ -340,7 +342,10 @@ def main(benchmark, uq_method, dataset, output, restart):
 
         train_dl = DataLoader(dset, batch_size=training_cfg['batch_size'], shuffle=True)
         test_dl = DataLoader(dset, batch_size=training_cfg['batch_size'], shuffle=False)
+        train_start = time.time()
         trainer.fit(model, train_dl, test_dl)
+        train_end = time.time()
+        training_time = train_end - train_start
 
         model = torch.load(f'{trainer.logger.log_dir}/model.pth')
 
@@ -383,6 +388,7 @@ def main(benchmark, uq_method, dataset, output, restart):
             trial_results[index]['ood_loss'] = results['ood_loss']
             trial_results[index]['id_time'] = np.mean(results['id_time'])
             trial_results[index]['ood_time'] = np.mean(results['ood_time'])
+            trial_results[index]['train_time'] = training_time
             trial_results[index]['log_path'] = f'{trainer.logger.log_dir}'
             print(trial_results)
             fig, ax = plt.subplots()
@@ -416,10 +422,10 @@ def main(benchmark, uq_method, dataset, output, restart):
         opt_manager.save_trial_results_dict(trial_results)
         opt_manager.save_optimization_state(index, ax_client)
 
-    pareto_results = ax_client.get_pareto_optimal_parameters(use_model_predictions=False)
-    pareto_predictions = ax_client.get_pareto_optimal_parameters(use_model_predictions=True)
-    pareto = {'results': pareto_results, 'predictions': pareto_predictions}
-    opt_manager.save_pareto_parameters(json.dumps(pareto))
+    # pareto_results = ax_client.get_pareto_optimal_parameters(use_model_predictions=False)
+    # pareto_predictions = ax_client.get_pareto_optimal_parameters(use_model_predictions=True)
+    # pareto = {'results': pareto_results, 'predictions': pareto_predictions}
+    # opt_manager.save_pareto_parameters(json.dumps(pareto))
 
 if __name__ == '__main__':
     main()

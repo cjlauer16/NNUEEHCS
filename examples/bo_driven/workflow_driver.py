@@ -22,7 +22,7 @@ def get_config(config_filename):
 
 
 @bash_app(cache=True)
-def run_bo(benchmark, uq_method, dataset, output,
+def run_bo(config, benchmark, uq_method, dataset, output,
            stdout=parsl.AUTO_LOGNAME,
            stderr=parsl.AUTO_LOGNAME):
     import sh
@@ -38,6 +38,7 @@ def run_bo(benchmark, uq_method, dataset, output,
         pass
     python = sh.Command('python3')
     command = python.bake('bo.py', '--benchmark', benchmark, 
+                          '--config', config,
                           '--uq_method', uq_method, 
                           '--dataset', dataset, 
                           '--output', output,
@@ -70,13 +71,13 @@ def main(config, output, parsl_rundir):
         parallelism=1,
         exclusive=False,
         mem_per_node=64,
-        walltime="8:55:00",
-        cmd_timeout=500,
+        walltime="1:55:00",
+        cmd_timeout=120,
         launcher=SingleNodeLauncher()
     )
 
     parsl_config = Config(
-        retries=5,
+        retries=20,
         run_dir=parsl_rundir,
         executors=[
             HighThroughputExecutor(
@@ -114,7 +115,7 @@ def main(config, output, parsl_rundir):
     results = list()
     for bench, uq_method, dset in total:
         print(f'Running {bench} with {uq_method} on {dset}')
-        res = run_bo(bench, uq_method, dset, output)
+        res = run_bo(config_filename, bench, uq_method, dset, output)
         results.append(res)
 
     for res in results:

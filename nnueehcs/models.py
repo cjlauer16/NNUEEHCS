@@ -239,7 +239,7 @@ class DeltaUQMLP(deltaUQ_MLP, WrappedModelBase):
 
 class PAGERMLP(DeltaUQMLP, WrappedModelBase):
     def forward(self, x, return_ue=False):
-        res = super().forward(x, return_ue)
+        res = DeltaUQMLP.forward(self, x, return_ue)
         if not return_ue:
             return res
 
