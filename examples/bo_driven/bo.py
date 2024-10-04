@@ -107,13 +107,18 @@ class OutputManager:
     def get_restart_index(self):
         opt_dir = self.output_dir_path
         opt_dir_base = opt_dir.parent
+        max_restart_idx = 0
 
         for item in opt_dir_base.iterdir():
             if self._is_run_directory(item.name):
                 run_index = self._get_run_index(item.name)
                 if self.run_completed(run_index):
+                    if run_index > max_restart_idx:
+                        max_restart_idx = run_index
                     continue
                 return run_index
+        # if everything succeeded, return the next index
+        return max_restart_idx + 1
 
 
     def _get_run_index(self, run_str):
