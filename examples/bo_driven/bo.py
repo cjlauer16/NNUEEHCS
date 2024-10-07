@@ -249,7 +249,7 @@ def evaluate(model, id_dset, ood_dset):
     ood_ipt = ood_ipt[indices_ood][:20000]
     ood_opt = ood_opt[indices_ood][:20000]
 
-    eval = get_uncertainty_evaluator('wasserstein')
+    eval = get_uncertainty_evaluator('jensen_shannon')
     return eval.evaluate(model, (id_ipt, id_opt), (ood_ipt, ood_opt))
 
 def get_restart(output_dir, name, dataset, uq_method):

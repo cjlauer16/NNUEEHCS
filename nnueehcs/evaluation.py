@@ -64,6 +64,53 @@ class EuclideanDistance(UncertaintyDistanceMetric):
         return np.mean(np.sqrt(np.sum((ue1.data - ue2.data) ** 2, axis=-1)))
 
 
+class JensenShannonDistance(UncertaintyDistanceMetric):
+    def _to_probability_distribution(self, ue: UncertaintyEstimate) -> np.ndarray:
+        if ue.dimensions == 1:
+            return ue.data / np.sum(ue.data)
+        else:
+            return np.array([d / np.sum(d) for d in ue.data])
+
+    def _is_probability_distribution(self, data: np.ndarray) -> bool:
+        return np.allclose(np.sum(data), 1.0)
+
+    def distance(self, ue1: UncertaintyEstimate, ue2: UncertaintyEstimate) -> float:
+        if ue1.dimensions != ue2.dimensions:
+            raise ValueError("Uncertainty estimates must have the same dimensions")
+
+        p1 = ue1.data
+        p2 = ue2.data
+
+        return self._average_js_distance(p1, p2)
+
+    def _average_js_distance(self, array1: np.array, array2: np.array) -> float:
+        from scipy.spatial.distance import jensenshannon
+        p1 = array1
+        p2 = array2
+    
+        if p1.ndim == 1 or (p1.ndim == 2 and p1.shape[1] == 1):
+            p1flat = p1.flatten()
+            p2flat = p2.flatten()
+            # extend with zeros so their shapes match
+            # js_distances = jensenshannon(p1flat, p2flat)
+            return self.pdf_jsd(p1flat, p2flat)
+        else:
+            js_distances = [jensenshannon(p1[i], p2[i]) for i in range(p1.shape[0])]
+    
+        # Return the average Jensen-Shannon distance
+        return np.mean(js_distances)
+
+    def pdf_jsd(self, dist1, dist2, num_points=20000):
+        from scipy.stats import gaussian_kde
+        from scipy.spatial.distance import jensenshannon
+        kde1 = gaussian_kde(dist1)
+        kde2 = gaussian_kde(dist2)
+        x_range = np.linspace(min(dist1.min(), dist2.min()), max(dist1.max(), dist2.max()), num_points)
+        pdf1 = kde1(x_range)
+        pdf2 = kde2(x_range)
+        return jensenshannon(pdf1, pdf2)
+
+
 class UncertaintyEvaluator:
     def __init__(self, distance_metric: UncertaintyDistanceMetric):
         self.distance_metric = distance_metric
@@ -114,7 +161,8 @@ class UncertaintyEvaluator:
 def get_uncertainty_evaluator(distance_metric: str) -> UncertaintyEvaluator:
     distance_metrics = {
         "wasserstein": WassersteinDistance,
-        "euclidean": EuclideanDistance
+        "euclidean": EuclideanDistance,
+        "jensen_shannon": JensenShannonDistance
     }
 
     metric = distance_metrics.get(distance_metric.lower())
