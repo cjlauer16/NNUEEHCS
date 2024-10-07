@@ -132,6 +132,8 @@ class ModelBuilder:
         self.model_descr = copy.deepcopy(model_descr)
         if 'train_config' in kwargs:
             self.train_config = kwargs['train_config']
+        else:
+            self.train_config = None
 
     def build(self):
         built = build_network(self.model_descr)
