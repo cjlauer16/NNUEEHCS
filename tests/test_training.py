@@ -118,7 +118,7 @@ def test_ensembles(trainer_config, training_config, network_descr, train_dataloa
 
 def test_kde(trainer_config, training_config, network_descr, train_dataloader):
 
-    kde = KDEModelBuilder(network_descr, {}, train_config=training_config).build()
+    kde = KDEModelBuilder(network_descr, kde_descr = {'rtol': 10000*0.1}, train_config=training_config).build()
     trainer = get_trainer(trainer_config, 'kde', callbacks=kde.get_callbacks())
     logger = trainer.get_logger()
     trainer.fit(kde, train_dataloader, train_dataloader)

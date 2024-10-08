@@ -383,7 +383,7 @@ def test_dataset_split(char_delim_dset, datafile_yaml2):
     slc1, slc2 = slice(0, 10), slice(40, 75)
 
     slced_ipt = torch.cat([ipt[slc1], ipt[slc2]])
-    slced_opt = torch.cat([opt[slc1], opt[slc2]])
+    slced_opt = torch.cat([opt[slc1], opt[slc2]]).reshape(-1, 1)
 
 
     assert (char_delim_dset.input == slced_ipt).all()
@@ -399,8 +399,9 @@ def test_dataset_split(char_delim_dset, datafile_yaml2):
     other_percentiles = [(10, 40), (75, 90), (90, 100)]
     other_partitioned = no_percentiles.percentile_partition(other_percentiles)
 
+    opt = opt.reshape(-1, 1)
     part_combined = torch.cat([partitioned[1], other_partitioned[1]])
-    pc_sorted = part_combined[part_combined.argsort()]
+    pc_sorted = part_combined[part_combined.flatten().argsort()]
     assert (pc_sorted == opt).all()
 
 
@@ -411,7 +412,7 @@ def test_dataset_split(char_delim_dset, datafile_yaml2):
 
 def test_dtype_conversion(char_delim_dset, datafile_yaml2):
     ipt = torch.tensor([[i, 101+i] for i in range(1, 101)], dtype=torch.int32)
-    opt = torch.tensor([i for i in range(1, 101)], dtype=torch.int32)
+    opt = torch.tensor([i for i in range(1, 101)], dtype=torch.int32).reshape(-1, 1)
 
     dset = read_dataset_from_yaml(datafile_yaml2, 'delim_train_with_dtype')
     assert dset.input.dtype == torch.int32
