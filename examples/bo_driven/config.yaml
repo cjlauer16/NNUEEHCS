@@ -431,12 +431,16 @@ uq_methods:
           - 0.3
 
 bo_config:
-  trials: 40
-  objectives:
-  # - name: ue_time
-    # type: minimize
-  - name: score_dist
-    type: maximize
-  tracking_metrics:
-    # - ue_time
-    - score_dist
+  trials: 100
+  # evaluation_metric: wasserstein_distance
+  evaluation_metric: 
+    name: percentile_classification
+    threshold: 0.8
+  # objectives:
+  # # - name: ue_time
+  #   # type: minimize
+  # - name: jensen_shannon_distance
+  #   type: maximize
+  # tracking_metrics:
+  #   # - ue_time
+  #   - jensen_shannon_distance

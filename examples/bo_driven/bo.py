@@ -235,7 +235,7 @@ def prepare_dset_for_use(dset, training_cfg, scaling_dset=None):
     return dset
 
 
-def evaluate(model, id_dset, ood_dset):
+def evaluate(model, id_dset, ood_dset, evaluator):
     id_ipt = id_dset.input.to(model.device)
     id_opt = id_dset.output.to(model.device)
     ood_ipt = ood_dset.input.to(model.device)
@@ -249,8 +249,7 @@ def evaluate(model, id_dset, ood_dset):
     ood_ipt = ood_ipt[indices_ood][:20000]
     ood_opt = ood_opt[indices_ood][:20000]
 
-    eval = get_uncertainty_evaluator('jensen_shannon')
-    return eval.evaluate(model, (id_ipt, id_opt), (ood_ipt, ood_opt))
+    return evaluator.evaluate(model, (id_ipt, id_opt), (ood_ipt, ood_opt))
 
 def get_restart(output_dir, name, dataset, uq_method):
     ld_name = f'{name}/{dataset}/{uq_method}'
@@ -305,7 +304,16 @@ def main(benchmark, uq_method, config, dataset, output, restart):
         bo_config.update(uq_config[uq_method])
         bo_config['parameter_space'] += training_cfg['parameter_space']
 
-    bo_params = get_params(bo_config)
+    evaluator = get_uncertainty_evaluator(bo_config['evaluation_metric'])
+    eval_metric = evaluator.eval_metric
+    objectives = eval_metric.get_objectives()
+    metrics = eval_metric.get_metrics()
+    boc = bo_config.copy()
+    boc['objectives'] = objectives
+    boc['tracking_metrics'] = metrics
+    del boc['evaluation_metric']
+
+    bo_params = get_params(boc)
     del training_cfg['parameter_space']
     del uq_config[uq_method]['parameter_space']
     name = benchmark
@@ -366,7 +374,7 @@ def main(benchmark, uq_method, config, dataset, output, restart):
                                             scaling_dset=dset_id)
             dset_id = prepare_dset_for_use(dset_id, training_cfg)
 
-            results = evaluate(model, dset_id, dset_ood)
+            results = evaluate(model, dset_id, dset_ood, evaluator)
             print(results)
 
             id_ue = results['id_ue']
@@ -375,18 +383,17 @@ def main(benchmark, uq_method, config, dataset, output, restart):
             ue_mean = ue_time.mean()
             ue_std = ue_time.std()
 
-            unc_dist = np.array(results['uncertainty_distance'])
-            unc_dist_mean = unc_dist.mean()
-            unc_dist_std = unc_dist.std()
+            unc_result = results['uncertainty_evaluation']
 
             trial_result = {#'ue_time': (ue_mean, ue_std),
-                            'score_dist': (unc_dist_mean, unc_dist_std)}
+                            **{k: (v, 0) for k, v in unc_result.get_result().items()},
+                            }
             ax_client.complete_trial(trial_index=index, raw_data=trial_result)
             trial_results[index] = dict()
             trial_results[index].update(trial)
             trial_results[index]['ue_time'] = ue_mean
             trial_results[index]['learning_rate'] = lr
-            trial_results[index]['score_dist'] = unc_dist_mean
+            trial_results[index].update(unc_result.get_all_results())
             trial_results[index]['id_ue'] = id_ue.mean()
             trial_results[index]['ood_ue'] = ood_ue.mean()
             trial_results[index]['id_loss'] = results['id_loss']
