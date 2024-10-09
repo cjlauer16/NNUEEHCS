@@ -443,3 +443,15 @@ def test_dataset_with_length_cutoff(char_delim_dset):
     assert len(dset) == 5
     assert len(dset.input) == 5
     assert len(dset.output) == 5
+
+
+def test_dataset_to_device(char_delim_dset):
+    dset = char_delim_dset
+    dset.to('cpu')
+    assert dset.input.device == torch.device('cpu')
+    assert dset.output.device == torch.device('cpu')
+
+    dset_device_target = 'cuda' if torch.cuda.is_available() else 'cpu'
+    dset.to(dset_device_target)
+    assert dset.input.device.type == dset_device_target
+    assert dset.output.device.type == dset_device_target

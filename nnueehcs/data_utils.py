@@ -27,6 +27,11 @@ class DatasetCommon():
     def __len__(self):
         return self.len
 
+    def to(self, device):
+        self.input = self.input.to(device)
+        self.output = self.output.to(device)
+        return self
+
     @property
     def len(self):
         return len(self.input)
