@@ -51,13 +51,12 @@ class UncertaintyEvaluationResult:
 
 
 class ClassificationEvaluationResult:
-    def __init__(self, data):
+    def __init__(self, metric_names, data):
+        self.metric_names = metric_names
         self.data = data
 
     def get_result(self):
-        return {'sensitivity': self.data['sensitivity'],
-                'specificity': self.data['specificity']
-        }
+        return {name: self.data[name] for name in self.metric_names}
 
     def get_all_results(self):
         return self.data
@@ -230,7 +229,7 @@ class ClassificationUncertaintyEvaluator(UncertaintyEvaluator):
                 ood_time.append(ood_end - ood_start)
 
         unc_metrics = self.eval_metric.evaluate(model, id_data, ood_data)
-        unc_results = ClassificationEvaluationResult(unc_metrics)
+        unc_results = ClassificationEvaluationResult(self.eval_metric.get_metrics(), unc_metrics)
         id_ue = UncertaintyEstimate(id_ue)
         ood_ue = UncertaintyEstimate(ood_ue)
         loss_fn = model.val_loss
