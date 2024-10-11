@@ -6,5 +6,16 @@ build-backend = "hatchling.build"
 [project]
 name = "nnueehcs"
 version = "0.1.0"
-dependencies = []
+dependencies = ["click", 
+                "pytorch-lightning==2.4.0",
+                "torch>=2.2.0", 
+                "torchvision",
+                "pytest",
+                "ax-platform",
+                "parsl",
+                "pandas",
+                "numpy",
+                "matplotlib",
+                "scipy",
+                "h5py"]
 requires-python = ">= 3.8"
