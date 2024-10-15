@@ -89,3 +89,38 @@ class PercentileBasedIdOodClassifier(_IdOodClassifier):
             'sensitivity',
             # 'specificity'
         ]
+
+class ReversedPercentileBasedIdOodClassifier(PercentileBasedIdOodClassifier):
+    def evaluate(self, model: nn.Module, id_data: tuple, ood_data: tuple) -> dict:
+        id_ipt, id_opt = id_data
+        ood_ipt, ood_opt = ood_data
+        results = _IdOodClassifier.evaluate(self, model, id_data, ood_data)
+
+        id_scores = results['id_scores']
+        ood_scores = results['ood_scores']
+
+        reverse_percentile = 1 - self.percentile
+        id_percentile = torch.quantile(id_scores, reverse_percentile)
+        id_above = id_scores[id_scores > id_percentile]
+        id_below = id_scores[id_scores <= id_percentile]
+
+        ood_above = ood_scores[ood_scores > id_percentile]
+        ood_below = ood_scores[ood_scores <= id_percentile]
+
+        false_positives = len(id_below)
+        false_negatives = len(ood_above)
+
+        true_positives = len(ood_below)
+        true_negatives = len(id_above)
+
+        fpr = self._fpr(false_positives, true_negatives)
+        fnr = self._fnr(false_negatives, true_positives)
+        sensitivity = self._sensitivity(true_positives, false_negatives)
+        specificity = self._specificity(true_negatives, false_positives)
+
+        return {
+            "sensitivity": sensitivity,
+            "specificity": specificity,
+            'fpr': fpr,
+            'fnr': fnr
+        }

@@ -4,7 +4,7 @@ from typing import Union, Tuple
 import numpy as np
 from scipy.stats import wasserstein_distance
 from abc import ABC, abstractmethod
-from .classification import PercentileBasedIdOodClassifier
+from .classification import PercentileBasedIdOodClassifier, ReversedPercentileBasedIdOodClassifier
 
 
 class UncertaintyEstimate:
@@ -255,12 +255,23 @@ def get_uncertainty_evaluator(distance_metric: str | dict) -> UncertaintyEvaluat
         JensenShannonEvaluation.name: JensenShannonEvaluation
     }
 
-    if isinstance(distance_metric, str):
-        metric = distance_metrics.get(distance_metric.lower())
+    breakpoint()
+    name = distance_metric['name']
+    if name in distance_metrics:
+        metric = distance_metrics.get(name)
     else:
         name, arg = distance_metric['name'], distance_metric['threshold']
         if name == 'percentile_classification':
-            return ClassificationUncertaintyEvaluator(PercentileBasedIdOodClassifier(arg))
+            if 'reversed' in distance_metric:
+                is_reversed = distance_metric['reversed']
+            else:
+                is_reversed = False
+
+            if is_reversed:
+                classifier = ReversedPercentileBasedIdOodClassifier(arg)
+            else:
+                classifier = PercentileBasedIdOodClassifier(arg)
+            return ClassificationUncertaintyEvaluator(classifier)
     if not metric:
         raise ValueError("Invalid distance metric type")
 
