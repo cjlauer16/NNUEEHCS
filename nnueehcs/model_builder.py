@@ -2,7 +2,7 @@ import torch.nn
 import collections
 import io
 import yaml
-from .models import MLPModel, KDEMLPModel, DeltaUQMLP, EnsembleModel, PAGERMLP, MCDropoutModel
+from .models import MLPModel, KDEMLPModel, DeltaUQMLP, EnsembleModel, PAGERMLP, MCDropoutModel, ChecksumMLP
 import copy
 import types
 
@@ -114,6 +114,9 @@ class MLPInfoGrabber(InfoGrabbBase):
     def set_num_inputs(self, num_inputs):
         self.descr[0]['Linear']['args'][0] = num_inputs
 
+    def num_outputs(self):
+        return self.descr[-1]['Linear']['args'][1]
+
 
 class ModelInfo:
     def __init__(self):
@@ -155,6 +158,15 @@ class MLPModelBuilder(ModelBuilder):
     def build(self):
         model = super().build()
         return MLPModel(model, train_config=self.train_config)
+    
+class ChecksumModelBuilder(ModelBuilder):
+    def __init__(self, model_descr, checksum_descr, **kwargs):
+        super().__init__(model_descr, **kwargs)
+        self.checksum_descr = checksum_descr
+
+    def build(self):
+        model = super().build()
+        return ChecksumMLP(model, train_config=self.train_config, **self.checksum_descr)
 
 
 class DeltaUQMLPModelBuilder(ModelBuilder):

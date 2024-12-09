@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 import pytorch_lightning as L
 import copy
+from checksum_functions import *
 
 training_defaults = {
     'learning_rate': 1e-3,
@@ -309,3 +310,123 @@ class PAGERMLP(DeltaUQMLP, WrappedModelBase):
                 self._anchor_Y.append(batch[1].detach())
 
 
+class ChecksumMLP(WrappedModelBase):
+    def __init__(self, model, **kwargs):
+        super(ChecksumMLP, self).__init__(**kwargs)
+        self.model = model
+
+        # Assign all key-value pairs as instance attributes
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+            
+        self.get_checksum_func(self.checksum_name)
+
+    def get_checksum_func(self, name):
+        if name == 'sum':
+            self.checksum = SummationChecksum()
+        elif name == 'sine':
+            self.checksum = SineChecksum()
+
+    def get_x_ood(self, n_ood, x_min, x_max, seed=None):
+        diff = x_max - x_min
+        upper_min = x_max + diff*self.oos_min
+        upper_max = x_max + diff*self.oos_max
+        lower_min = x_min - diff*self.oos_min
+        lower_max = x_min - diff*self.oos_max
+
+        if seed != None:
+            torch.manual_seed(seed)
+        mask = torch.randint(0, 2, diff.shape, dtype=torch.bool)
+        random_values = torch.rand(n_ood, diff.shape[0])
+
+        result = torch.where(mask,
+                             upper_min + random_values*(upper_max-upper_min),
+                             lower_min + random_values*(lower_max-lower_min))
+
+        return result
+    
+    ###############################
+    ## Rob's Implementation #########
+    ###############################
+
+    # def oos_data(self, batch_input):
+    #    # get a random vector in the unit sphere.
+    #    oos_sample = torch.randn_like(batch_input)
+    #    #compute infinity norm
+    #    oos_denom,_ = torch.max(torch.abs(oos_sample), dim=-1, keepdim=True)
+    #    #oos_denom = oos_denom.expand_as(oos_sample)
+    #    oos_sample = oos_sample / oos_denom
+
+    #    center = (self.bb_max+self.bb_min)/2
+    #    radius = (self.bb_max-self.bb_min)/2*1.05
+    #    oos_sample = (oos_sample+center)*radius
+    #    return oos_sample
+
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        batch_size = x.shape[0]
+
+        # Make prediction
+        y_pred = self(x)
+
+        # calculate normal loss
+        loss_val = self.loss(y, y_pred[:,:-1])
+        total_loss = loss_val
+
+        if self.checksum_pred_weight > 0:
+            checksum_loss = self.Checksum.calc_checksum_mse(y, y_pred[:,-1])
+            total_loss = total_loss + self.checksum_pred_weight*checksum_loss/(self.num_outputs-1)
+
+        if self.checksum_penalty_weight > 0:
+            checksum_penalty = self.Checksum.checksum_err_penalty(y_pred)
+            total_loss = total_loss + self.checksum_penalty_weight * checksum_penalty
+
+        if self.checksum_reward_weight > 0:
+            x_ood = self.get_x_ood(batch_size, self.inputs_min, self.inputs_max)
+            y_pred_ood = self(x_ood)
+            checksum_reward = self.Checksum.checksum_err_reward(y_pred_ood)
+
+            total_loss = total_loss + self.checksum_reward_weight * checksum_reward
+
+        self.log('train_loss', total_loss)
+
+        return total_loss
+    
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        batch_size = x.shape[0]
+
+        # Make prediction
+        y_pred = self(x)
+
+        # calculate normal loss
+        loss_val = self.loss(y, y_pred[:,:-1])
+        total_loss = loss_val
+
+        if self.checksum_pred_weight > 0:
+            checksum_loss = self.Checksum.calc_checksum_mse(y, y_pred[:,-1])
+            total_loss = total_loss + self.checksum_pred_weight*checksum_loss/(self.num_outputs-1)
+
+        if self.checksum_penalty_weight > 0:
+            checksum_penalty = self.Checksum.checksum_err_penalty(y_pred)
+            total_loss = total_loss + self.checksum_penalty_weight * checksum_penalty
+
+        if self.checksum_reward_weight > 0:
+            x_ood = self.get_x_ood(batch_size, self.inputs_min, self.inputs_max)
+            y_pred_ood = self(x_ood)
+            checksum_reward = self.Checksum.checksum_err_reward(y_pred_ood)
+
+            total_loss = total_loss + self.checksum_reward_weight * checksum_reward
+
+        self.log('validation_loss', total_loss)
+
+        return total_loss
+
+
+    def forward(self, x, return_ue=False):
+        outputs = self.model(x)
+        if return_ue:
+            ue = self.checksum.calc_pointwise_error(outputs)
+            return outputs, ue
+        else:
+            return outputs
