@@ -116,6 +116,9 @@ class MLPInfoGrabber(InfoGrabbBase):
 
     def num_outputs(self):
         return self.descr[-1]['Linear']['args'][1]
+    
+    def set_num_outputs(self, num_outputs):
+        self.descr[-1]['Linear']['args'][1] = num_outputs
 
 
 class ModelInfo:
@@ -163,10 +166,21 @@ class ChecksumModelBuilder(ModelBuilder):
     def __init__(self, model_descr, checksum_descr, **kwargs):
         super().__init__(model_descr, **kwargs)
         self.checksum_descr = checksum_descr
+        self._updated = False
+        if 'n_checksums' in self.checksum_descr:
+            self.n_checksums = self.checksum_descr['n_checksums']
 
     def build(self):
+        self.update_info(self.get_info())
         model = super().build()
+        print(model)
         return ChecksumMLP(model, train_config=self.train_config, **self.checksum_descr)
+    
+    def update_info(self, info):
+        if self._updated:
+            return
+        self._updated = True
+        info.set_num_outputs(info.num_outputs() + self.n_checksums)
 
 
 class DeltaUQMLPModelBuilder(ModelBuilder):
