@@ -255,7 +255,6 @@ def get_uncertainty_evaluator(distance_metric: str | dict) -> UncertaintyEvaluat
         JensenShannonEvaluation.name: JensenShannonEvaluation
     }
 
-    breakpoint()
     name = distance_metric['name']
     if name in distance_metrics:
         metric = distance_metrics.get(name)
