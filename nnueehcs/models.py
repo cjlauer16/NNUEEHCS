@@ -1,5 +1,5 @@
 from torch import nn
-from nnueehcs.deltauq import deltaUQ_MLP, deltaUQ_CNN
+from deltauq import deltaUQ_MLP, deltaUQ_CNN
 
 import torch
 import torch.nn as nn

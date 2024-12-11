@@ -153,7 +153,7 @@ def test_kde(trainer_config, training_config, network_descr, train_dataloader):
 
     assert is_within_tolerance(avg_score, 0.032892700285257835, 0.20)
 
-@pytest.mark.skip(reason="Not working, something up with DUQ")
+#@pytest.mark.skip(reason="Not working, something up with DUQ")
 def test_duq(trainer_config, training_config, network_descr, train_dataloader):
     trainer = get_trainer(trainer_config, 'kde')
     logger = trainer.get_logger()
@@ -165,7 +165,7 @@ def test_duq(trainer_config, training_config, network_descr, train_dataloader):
     # model_accuracy_assertions(logger.log_dir, loss_ceiling=0.3, tolerance=40)
     prediction_assertions(duq)
 
-@pytest.mark.skip(reason="Not working, something up with DUQ")
+#@pytest.mark.skip(reason="Not working, something up with DUQ")
 def test_pager(trainer_config, training_config, network_descr, train_dataloader):
     trainer = get_trainer(trainer_config, 'kde')
     logger = trainer.get_logger()

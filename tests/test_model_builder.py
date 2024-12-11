@@ -12,7 +12,7 @@ import io
 import yaml
 import os
 from torch import nn
-from nnueehcs.deltauq import deltaUQ_MLP, deltaUQ_CNN
+from deltauq import deltaUQ_MLP, deltaUQ_CNN
 
 def assert_models_equal(model1, model2):
     for layer1, layer2 in zip(model1.children(), model2.children()):
@@ -195,7 +195,7 @@ def test_model_builder(model_descr_yaml, architecture1, architecture2):
 
     assert not hasattr(info, 'get_estimator')
 
-@pytest.mark.skip(reason="This test is currently failing")
+#@pytest.mark.skip(reason="This test is currently failing")
 def test_duq_model_builder(model_descr_yaml, duq_architecture1, duq_architecture2):
     model_descr = yaml.safe_load(io.StringIO(model_descr_yaml))
     model_builder = DeltaUQMLPModelBuilder(model_descr['architecture'], model_descr['delta_uq_model'])
@@ -221,7 +221,7 @@ def test_duq_model_builder(model_descr_yaml, duq_architecture1, duq_architecture
     net = model_builder.build()
     assert_models_equal(net, duq_architecture2)
 
-@pytest.mark.skip(reason="This test is currently failing")
+#@pytest.mark.skip(reason="This test is currently failing")
 def test_pager_model_builder(model_descr_yaml, duq_architecture1, duq_architecture2):
     model_descr = yaml.safe_load(io.StringIO(model_descr_yaml))
     model_builder = PAGERModelBuilder(model_descr['architecture'], model_descr['pager_model'])
