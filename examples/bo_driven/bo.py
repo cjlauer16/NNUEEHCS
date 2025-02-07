@@ -5,8 +5,8 @@ from torch.utils.data import DataLoader
 import time
 import sys
 from nnueehcs.model_builder import (EnsembleModelBuilder, KDEModelBuilder, 
-                                    DeltaUQMLPModelBuilder, PAGERModelBuilder, 
-                                    MCDropoutModelBuilder)
+                                    KNNKDEModelBuilder, DeltaUQMLPModelBuilder, 
+                                    PAGERModelBuilder, MCDropoutModelBuilder)
 from nnueehcs.training import Trainer, ModelSavingCallback
 from nnueehcs.data_utils import get_dataset_from_config
 from nnueehcs.evaluation import get_uncertainty_evaluator
@@ -188,6 +188,8 @@ def get_model_builder_class(uq_method):
         return EnsembleModelBuilder
     elif uq_method == 'kde':
         return KDEModelBuilder
+    elif uq_method == 'knn_kde':
+        return KNNKDEModelBuilder
     elif uq_method == 'delta_uq':
         return DeltaUQMLPModelBuilder
     elif uq_method == 'pager':
@@ -353,7 +355,7 @@ def main(benchmark, uq_method, config, dataset, output, restart):
                               log_dir=output)
         opt_manager = OutputManager(trainer.logger.log_dir, benchmark, append_benchmark_name=False)
 
-        train_dl = DataLoader(dset, batch_size=training_cfg['batch_size'], shuffle=True)
+        train_dl = DataLoader(dset, batch_size=training_cfg['batch_size'], shuffle=True, drop_last=True)
         test_dl = DataLoader(dset, batch_size=training_cfg['batch_size'], shuffle=False)
         train_start = time.time()
         trainer.fit(model, train_dl, test_dl)

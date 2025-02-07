@@ -1,5 +1,6 @@
 from torch import nn
 from deltauq import deltaUQ_MLP, deltaUQ_CNN
+import kde
 
 import torch
 import torch.nn as nn
@@ -165,6 +166,7 @@ class KDEMLPModel(MLPModel):
             self._epochs = 0
 
         def on_train_epoch_end(self, trainer, pl_module):
+            print(f"Fitting KDE on {len(self._train_data_to_fit)} samples")
             if self._epochs == 0:
                 trn_data = torch.cat(self._train_data_to_fit)
                 pl_module.fit_kde(trn_data)
@@ -176,6 +178,46 @@ class KDEMLPModel(MLPModel):
 
     def get_callbacks(self):
         return [KDEMLPModel.KDEFitCallback()]
+
+
+class KNNKDEMLPModel(MLPModel):
+    def __init__(self, base_model, bandwidth='scott', k=10, train_fit_prop=1.0, **kwargs):
+        super(KNNKDEMLPModel, self).__init__(base_model, **kwargs)
+        self.bandwidth = bandwidth
+        self.k = k
+        self.train_fit_prop = train_fit_prop
+        self._kde = kde.KNNKDE(k=self.k, bandwidth=self.bandwidth)
+
+    def fit_kde(self, data):
+        self._kde.fit(data)
+
+    def forward(self, x, return_ue=False):
+        if return_ue and self._kde is None:
+            raise ValueError("KDE not fitted yet")
+        pred = super().forward(x)
+        if return_ue:
+            return pred, self._kde.kernel_density(x)
+        return pred
+
+    class KNNKDEFitCallback(L.callbacks.Callback):
+        def __init__(self):
+            super().__init__()
+            self._train_data_to_fit = []
+            self._epochs = 0
+
+        def on_validation_epoch_start(self, trainer, pl_module):
+            if self._epochs == 0:
+                trn_data = torch.cat(self._train_data_to_fit)
+                pl_module.fit_kde(trn_data)
+            self._epochs += 1
+
+        def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+            if self._epochs == 0:
+                self._train_data_to_fit.append(batch[0])
+
+    def get_callbacks(self):
+        callbacks = [self.KNNKDEFitCallback()]
+        return callbacks
 
 
 class DeltaUQMLP(deltaUQ_MLP, WrappedModelBase):

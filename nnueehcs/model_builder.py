@@ -2,7 +2,7 @@ import torch.nn
 import collections
 import io
 import yaml
-from .models import MLPModel, KDEMLPModel, DeltaUQMLP, EnsembleModel, PAGERMLP, MCDropoutModel
+from .models import MLPModel, KDEMLPModel, DeltaUQMLP, EnsembleModel, PAGERMLP, MCDropoutModel, KNNKDEMLPModel
 import copy
 import types
 
@@ -277,3 +277,12 @@ class KDEModelBuilder(ModelBuilder):
                            **self.kde_descr,
                            train_config=self.train_config
                            )
+
+
+class KNNKDEModelBuilder(ModelBuilder):
+    def __init__(self, base_descr, knn_kde_descr, **kwargs):
+        super().__init__(base_descr, **kwargs)
+        self.knn_kde_descr = knn_kde_descr
+
+    def build(self):
+        return KNNKDEMLPModel(super().build(), **self.knn_kde_descr, train_config=self.train_config)
