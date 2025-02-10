@@ -204,6 +204,7 @@ def main(inputs, output):
     barplot_quantity(results, 'sensitivity', output)
     barplot_quantity(results, 'sensitivity', output, statistic='median')
     plot_quantity(results, 'ue_time', output)
+    plot_quantity(results, 'ue_throughput', output)
 
     filtered_results = narrow_to_statistic(results, 'sensitivity')
     barplot_single_quantity(filtered_results, 'ue_time', output)

@@ -244,8 +244,9 @@ def evaluate(model: nn.Module, id_data, ood_data, evaluator) -> dict:
         dict containing:
             - id_ue: UncertaintyEstimate for ID data
             - ood_ue: UncertaintyEstimate for OOD data
-            - id_time: list of inference times for ID data
-            - ood_time: list of inference times for OOD data
+            - ue_time: list of inference + uncertainty estimation times
+            - id_time: list of inference + uncertainty estimation times for ID data
+            - ood_time: list of inference + uncertainty estimation times for OOD data
             - id_loss: mean loss on ID data
             - ood_loss: mean loss on OOD data
             - uncertainty_evaluation: evaluation results from the evaluator
@@ -266,6 +267,13 @@ def evaluate(model: nn.Module, id_data, ood_data, evaluator) -> dict:
         # Time ID predictions
         for _ in range(warmup):
             id_preds, id_ue = model(id_ipt, return_ue=True)
+
+        id_ood_combined = torch.cat((id_ipt, ood_ipt))
+        id_ood_combined_times = []
+        for _ in range(trials):
+            start = time.time()
+            id_ood_combined_preds, id_ood_combined_ue = model(id_ood_combined, return_ue=True)
+            id_ood_combined_times.append(time.time() - start)
 
         id_times = []
         for _ in range(trials): 
@@ -296,8 +304,9 @@ def evaluate(model: nn.Module, id_data, ood_data, evaluator) -> dict:
         return {
             'id_ue': id_ue,
             'ood_ue': ood_ue,
-            'id_time': np.mean(id_times),
-            'ood_time': np.mean(ood_times),
+            'ue_time': id_ood_combined_times,
+            'id_time': id_times,
+            'ood_time': ood_times,
             'id_loss': id_loss,
             'ood_loss': ood_loss,
             'uncertainty_evaluation': eval_results
@@ -438,11 +447,13 @@ def main(benchmark, uq_method, config, dataset, output, restart):
 
             id_ue = results['id_ue']
             ood_ue = results['ood_ue']
-            ue_time = np.array(results['id_time'] + results['ood_time'])
-            ue_mean = ue_time.mean()
-            ue_std = ue_time.std()
 
             unc_result = results['uncertainty_evaluation']
+
+            #calculate ID/OOD ue throughput in items per second
+            id_ue_throughput = dset_id.input.size(0) / np.mean(results['id_time'])
+            ood_ue_throughput = dset_ood.input.size(0) / np.mean(results['ood_time'])
+            ue_throughput = (dset_id.input.size(0) + dset_ood.input.size(0)) / np.mean(results['ue_time'])
             
             trial_result = {#'ue_time': (ue_mean, ue_std),
                             **{k: (v, 0) for k, v in unc_result.items() if k in bo_params.tracking_metric_names}
@@ -452,7 +463,7 @@ def main(benchmark, uq_method, config, dataset, output, restart):
             # Store all metrics in trial results for later analysis
             trial_results[index] = dict()
             trial_results[index].update(trial)
-            trial_results[index]['ue_time'] = ue_mean
+            trial_results[index]['ue_time'] = np.mean(results['ue_time'])
             trial_results[index]['learning_rate'] = lr
             trial_results[index].update(unc_result)  # Store all metrick
             trial_results[index]['id_ue'] = id_ue.mean()
@@ -461,6 +472,9 @@ def main(benchmark, uq_method, config, dataset, output, restart):
             trial_results[index]['ood_loss'] = results['ood_loss']
             trial_results[index]['id_time'] = np.mean(results['id_time'])
             trial_results[index]['ood_time'] = np.mean(results['ood_time'])
+            trial_results[index]['ue_throughput'] = ue_throughput
+            trial_results[index]['id_ue_throughput'] = id_ue_throughput
+            trial_results[index]['ood_ue_throughput'] = ood_ue_throughput
             trial_results[index]['train_time'] = training_time
             trial_results[index]['log_path'] = f'{trainer.logger.log_dir}'
             print(trial_results)
