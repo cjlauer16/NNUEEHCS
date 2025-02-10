@@ -9,7 +9,7 @@ from nnueehcs.model_builder import (EnsembleModelBuilder, KDEModelBuilder,
                                     PAGERModelBuilder, MCDropoutModelBuilder)
 from nnueehcs.training import Trainer, ModelSavingCallback
 from nnueehcs.data_utils import get_dataset_from_config
-from nnueehcs.evaluation import get_uncertainty_evaluator
+from nnueehcs.evaluation import get_uncertainty_evaluator, UncertaintyEstimate
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks import ModelCheckpoint
 import pytorch_lightning as L
@@ -237,21 +237,71 @@ def prepare_dset_for_use(dset, training_cfg, scaling_dset=None):
     return dset
 
 
-def evaluate(model, id_dset, ood_dset, evaluator):
-    id_ipt = id_dset.input.to(model.device)
-    id_opt = id_dset.output.to(model.device)
-    ood_ipt = ood_dset.input.to(model.device)
-    ood_opt = ood_dset.output.to(model.device)
+def evaluate(model: nn.Module, id_data, ood_data, evaluator) -> dict:
+    """Evaluate model on ID and OOD data
+    
+    Returns:
+        dict containing:
+            - id_ue: UncertaintyEstimate for ID data
+            - ood_ue: UncertaintyEstimate for OOD data
+            - id_time: list of inference times for ID data
+            - ood_time: list of inference times for OOD data
+            - id_loss: mean loss on ID data
+            - ood_loss: mean loss on OOD data
+            - uncertainty_evaluation: evaluation results from the evaluator
+    """
+    model.eval()
+    id_ipt = id_data.input.to(model.device)
+    id_opt = id_data.output.to(model.device)
+    ood_ipt = ood_data.input.to(model.device)
+    ood_opt = ood_data.output.to(model.device)
 
     indices = torch.randperm(id_ipt.size(0))
     indices_ood = torch.randperm(ood_ipt.size(0))
 
-    id_ipt = id_ipt[indices][:20000]
-    id_opt = id_opt[indices][:20000]
-    ood_ipt = ood_ipt[indices_ood][:20000]
-    ood_opt = ood_opt[indices_ood][:20000]
 
-    return evaluator.evaluate(model, (id_ipt, id_opt), (ood_ipt, ood_opt))
+    warmup = 5
+    trials = 10
+    with torch.no_grad():
+        # Time ID predictions
+        for _ in range(warmup):
+            id_preds, id_ue = model(id_ipt, return_ue=True)
+
+        id_times = []
+        for _ in range(trials): 
+            start = time.time()
+            id_preds, id_ue = model(id_ipt, return_ue=True)
+            id_times.append(time.time() - start)
+        
+        # Time OOD predictions
+        ood_times = []
+        for _ in range(trials):
+            start = time.time()
+            ood_preds, ood_ue = model(ood_ipt, return_ue=True)
+            ood_times.append(time.time() - start)
+        
+        # Calculate losses
+        criterion = nn.MSELoss()
+        id_loss = criterion(id_preds, id_opt).item()
+        ood_loss = criterion(ood_preds, ood_opt).item()
+        
+        # Create UncertaintyEstimate objects
+        id_ue = UncertaintyEstimate(id_ue)
+        ood_ue = UncertaintyEstimate(ood_ue)
+        
+        # Get evaluation results
+        eval_results = evaluator.evaluate(model, (id_ipt, id_opt), 
+                                        (ood_ipt, ood_opt))
+        
+        return {
+            'id_ue': id_ue,
+            'ood_ue': ood_ue,
+            'id_time': np.mean(id_times),
+            'ood_time': np.mean(ood_times),
+            'id_loss': id_loss,
+            'ood_loss': ood_loss,
+            'uncertainty_evaluation': eval_results
+        }
 
 def get_restart(output_dir, name, dataset, uq_method):
     ld_name = f'{name}/{dataset}/{uq_method}'
@@ -306,10 +356,14 @@ def main(benchmark, uq_method, config, dataset, output, restart):
         bo_config.update(uq_config[uq_method])
         bo_config['parameter_space'] += training_cfg['parameter_space']
 
+    # Get evaluator from config
     evaluator = get_uncertainty_evaluator(bo_config['evaluation_metric'])
-    eval_metric = evaluator.eval_metric
-    objectives = eval_metric.get_objectives()
-    metrics = eval_metric.get_metrics()
+    
+    # Get objectives and metrics directly from evaluator
+    objectives = evaluator.get_objectives()
+    metrics = evaluator.get_metrics()
+    
+    # Prepare Bayesian optimization config
     boc = bo_config.copy()
     boc['objectives'] = objectives
     boc['tracking_metrics'] = metrics
@@ -389,16 +443,18 @@ def main(benchmark, uq_method, config, dataset, output, restart):
             ue_std = ue_time.std()
 
             unc_result = results['uncertainty_evaluation']
-
+            
             trial_result = {#'ue_time': (ue_mean, ue_std),
-                            **{k: (v, 0) for k, v in unc_result.get_result().items()},
+                            **{k: (v, 0) for k, v in unc_result.items() if k in bo_params.tracking_metric_names}
                             }
             ax_client.complete_trial(trial_index=index, raw_data=trial_result)
+            
+            # Store all metrics in trial results for later analysis
             trial_results[index] = dict()
             trial_results[index].update(trial)
             trial_results[index]['ue_time'] = ue_mean
             trial_results[index]['learning_rate'] = lr
-            trial_results[index].update(unc_result.get_all_results())
+            trial_results[index].update(unc_result)  # Store all metrick
             trial_results[index]['id_ue'] = id_ue.mean()
             trial_results[index]['ood_ue'] = ood_ue.mean()
             trial_results[index]['id_loss'] = results['id_loss']
