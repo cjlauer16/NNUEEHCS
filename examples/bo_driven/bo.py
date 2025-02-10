@@ -320,10 +320,13 @@ def main(benchmark, uq_method, config, dataset, output, restart):
     del uq_config[uq_method]['parameter_space']
     name = benchmark
 
-    try:
-        bo_idx, ax_client, trial_results = get_restart(output, name, dataset, uq_method)
-        print(f'Restarting from trial {bo_idx}')
-    except ValueError:
+    if restart:
+        try:
+            bo_idx, ax_client, trial_results = get_restart(output, name, dataset, uq_method)
+            print(f'Restarting from trial {bo_idx}')
+        except ValueError:
+            raise ValueError(f'No restart index found in {output}')
+    else:
         bo_idx = 0
         trial_results = dict()
         ax_client = AxClient()
