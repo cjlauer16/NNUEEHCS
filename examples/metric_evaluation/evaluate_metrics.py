@@ -54,73 +54,170 @@ def get_latest_finished_trial(composite, benchmark: str, dataset_name: str, meth
         results_instance = composite.get_results_instance(benchmark, dataset_name, method, f'bo_trial_{num_trials - 1}')
     return results_instance
 
+def get_benchmark_dataset_pairs(composite: ResultsComposite, benchmark: str = None, dataset: str = None) -> list[tuple[str, str]]:
+    """Get all valid benchmark-dataset pairs to evaluate.
+    
+    Args:
+        composite: ResultsComposite object containing results
+        benchmark: Optional benchmark name to filter by
+        dataset: Optional dataset name to filter by
+        
+    Returns:
+        List of (benchmark, dataset) tuples to evaluate
+    """
+    pairs = []
+    benchmarks = [benchmark] if benchmark else list(composite.get_benchmark_names())
+    
+    for bench in benchmarks:
+        datasets = [dataset] if dataset else list(composite.get_dataset_names(bench))
+        for ds in datasets:
+            if list(composite.get_method_names(bench, ds)):
+                pairs.append((bench, ds))
+            else:
+                print(f"Warning: Skipping {bench}/{ds} - no methods found")
+                
+    return pairs
+
+def prepare_datasets(dataset_cfg, dataset_name, training_cfg):
+    """Prepare both in-distribution and out-of-distribution datasets.
+    
+    Returns:
+        tuple: (dataset_id, dataset_ood) - both datasets moved to appropriate device
+    """
+    dataset_id = get_dataset(dataset_cfg, dataset_name)
+    dataset_ood = get_dataset(dataset_cfg, dataset_name, is_ood=True)
+    
+    dataset_ood = prepare_dataset_for_use(dataset_ood, training_cfg, scaling_dset=dataset_id)
+    dataset_id = prepare_dataset_for_use(dataset_id, training_cfg)
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return dataset_id.to(device), dataset_ood.to(device)
+
+def load_best_model(composite, benchmark, dataset, method, train_eval_metric):
+    """Load the best performing model from all trials.
+    
+    Returns:
+        tuple: (model, best_run_trial, device)
+    """
+    results_instance = get_latest_finished_trial(composite, benchmark, dataset, method)
+    max_value, best_run = find_best_training_run(results_instance, train_eval_metric)
+    best_run_trial = Path(best_run['log_path']).stem
+    
+    # Get model
+    best_run_instance = composite.get_results_instance(benchmark, dataset, method, best_run_trial)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = torch.load(best_run_instance.get_model_file(), map_location=device)
+    model.eval()
+    
+    return model, best_run_trial, device
+
+def evaluate_model_metrics(model, dataset_id, dataset_ood, evaluators):
+    """Evaluate all metrics for a given model and datasets.
+    
+    Returns:
+        list: List of evaluation results as [benchmark, dataset, method, trial, metric, objective, value]
+    """
+    results = []
+    with torch.no_grad():
+        for metric in evaluators.metrics:
+            print(f"Evaluating with {metric.get_name()}")
+            result = metric.evaluate(model, (dataset_id.input, dataset_id.output),
+                                   (dataset_ood.input, dataset_ood.output))
+            
+            for objective_name, objective_value in result.items():
+                results.append([metric.get_name(), objective_name, objective_value])
+    return results
+
+def find_all_training_runs(results_instance: ResultsInstance) -> list[pd.Series]:
+    """
+    Get all completed training runs.
+    
+    Args:
+        results_instance: ResultsInstance object containing the results
+    
+    Returns:
+        list of pandas Series containing all run info
+    """
+    res = pd.read_csv(results_instance.get_trial_results_file())
+    return [row for _, row in res.iterrows()]
+
+def process_benchmark_dataset(composite, config, benchmark, dataset, evaluators, evaluate_all: bool = False):
+    """Process a single benchmark-dataset pair and return evaluation results."""
+    print(f"\nProcessing benchmark {benchmark}, dataset {dataset}")
+    
+    # Get configurations
+    dataset_cfg = config['benchmarks'][benchmark]['datasets']
+    training_cfg = config['training']
+    train_eval_metric = get_evaluator(config['bo_config']['evaluation_metric']).metrics[0]
+    print(f"Using training evaluation metric: {train_eval_metric.get_name()}")
+    
+    dataset_id, dataset_ood = prepare_datasets(dataset_cfg, dataset, training_cfg)
+    
+    results = []
+    methods = list(composite.get_method_names(benchmark, dataset))
+    for method in methods:
+        print(f"\nEvaluating method: {method}")
+        
+        results_instance = get_latest_finished_trial(composite, benchmark, dataset, method)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        if evaluate_all:
+            runs = find_all_training_runs(results_instance)
+        else:
+            _, best_run = find_best_training_run(results_instance, train_eval_metric)
+            runs = [best_run]
+            
+        for run in runs:
+            trial = Path(run['log_path']).stem
+            print(f"Evaluating trial: {trial}")
+            
+            # Get model for this trial
+            trial_instance = composite.get_results_instance(benchmark, dataset, method, trial)
+            model = torch.load(trial_instance.get_model_file(), map_location=device)
+            model.eval()
+            
+            metric_results = evaluate_model_metrics(model, dataset_id, dataset_ood, evaluators)
+            
+            for metric_name, objective_name, value in metric_results:
+                results.append([benchmark, dataset, method, trial, metric_name, objective_name, value])
+    
+    return results
+
 @click.command("Post-hoc application of metrics to results")
 @click.option("--results_dir", type=click.Path(exists=True), help="The directory containing the results")
 @click.option("--config_file", type=click.Path(exists=True), help="The config file containing the metrics to evaluate")
-@click.option("--benchmark", type=str, help="The benchmark to evaluate")
-@click.option("--dataset", type=str, help="The dataset to evaluate")
-@click.option("--output", type=str, help="The output file name")
-def evaluate_metrics(results_dir: str, config_file: str, benchmark: str, dataset: str, output: str):
-    dataset_name = dataset
+@click.option("--benchmark", type=str, help="The benchmark to evaluate (optional)", required=False)
+@click.option("--dataset", type=str, help="The dataset to evaluate (optional)", required=False)
+@click.option("--output", type=str, help="The output file name", default="evaluated_metrics.csv")
+@click.option("--evaluate_all", is_flag=True, help="Evaluate all models instead of just the best one")
+def evaluate_metrics(results_dir: str, config_file: str, benchmark: str, dataset: str, output: str, evaluate_all: bool):
     composite = ResultsComposite(results_dir)
     config = yaml.load(open(config_file), Loader=yaml.FullLoader)
+    
+    # Get configuration
     eval_config = config["evaluation"]
     metrics = eval_config["metrics"]
-    dataset_cfg = config['benchmarks'][benchmark]['datasets']
     training_cfg = config['training']
     evaluators = get_evaluator(metrics)
-    dataset_id = get_dataset(dataset_cfg, dataset_name)
-    dataset_ood = get_dataset(dataset_cfg, dataset_name, is_ood=True)
-
-
-    train_eval_metric = config['bo_config']['evaluation_metric']
-    train_eval_metric = get_evaluator(train_eval_metric).metrics[0]
-    print(f"Eval metric name: {train_eval_metric.get_name()}")
-    # we have to scale ood relative to ID
-    # thus, we must scale OOD first because this method
-    # modifies in place
-    dataset_ood = prepare_dataset_for_use(dataset_ood, training_cfg, scaling_dset=dataset_id)
-    dataset_id = prepare_dataset_for_use(dataset_id, training_cfg)
-    print(evaluators.metrics)
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dataset_id = dataset_id.to(device)
-    dataset_ood = dataset_ood.to(device)
-
-    ipt_combined = torch.cat((dataset_id.input, dataset_ood.input))
-    opt_combined = torch.cat((dataset_id.output, dataset_ood.output))
-
-    print(f"Benchmark is {benchmark} and dataset is {dataset_name}")
-    columns = ['benchmark', 'dataset', 'method', 'trial', 'metric','objective', 'value']
-
+    
+    # Get all benchmark-dataset pairs to evaluate
+    pairs_to_evaluate = get_benchmark_dataset_pairs(composite, benchmark, dataset)
+    if not pairs_to_evaluate:
+        raise ValueError("No valid benchmark-dataset pairs found to evaluate")
+    
+    # Setup results collection
+    columns = ['benchmark', 'dataset', 'method', 'trial', 'metric', 'objective', 'value']
     rows = []
-    this_ds_and_benchmark = lambda x: x.get_dataset_name() == dataset_name and x.get_benchmark_name() == benchmark
-    methods = composite.get_method_names(benchmark, dataset_name)
-    for method in methods:
-        results_instance = get_latest_finished_trial(composite, benchmark, dataset_name, method)
-        
-        max_value, best_run = find_best_training_run(results_instance, train_eval_metric)
-        best_run_trial = Path(best_run['log_path']).stem
-
-        # Get the results instance for the specific training run
-        best_run_instance = composite.get_results_instance(benchmark, dataset_name, method, best_run_trial)
-        model_file = best_run_instance.get_model_file()
-        model = torch.load(model_file, map_location=device)
-        model.eval()
-
-        with torch.no_grad():
-            for metric in evaluators.metrics:
-                print(f"Evaluating benchmark {benchmark}, dataset {dataset_name}, method {method}, trial {best_run_trial} with {metric.get_name()}")
-                result = metric.evaluate(model, (dataset_id.input, dataset_id.output), 
-                                      (dataset_ood.input, dataset_ood.output))
-                print(f"{metric.get_name()}: {result}")
-                for objective_name, objective_value in result.items():
-                    rows.append([benchmark, dataset_name, method, best_run_trial,
-                                 metric.get_name(), objective_name, objective_value
-                                 ])
-
+    
+    # Process each benchmark-dataset pair
+    for current_benchmark, current_dataset in pairs_to_evaluate:
+        results = process_benchmark_dataset(composite, config, current_benchmark, current_dataset, evaluators, evaluate_all)
+        rows.extend(results)
+    
+    # Save results
     df = pd.DataFrame(rows, columns=columns)
-    df.to_csv(f"{output}.csv", index=False)
+    df.to_csv(f"{output}", index=False)
+    print(f"\nResults saved to {output}")
 
 if __name__ == "__main__":
     evaluate_metrics()
