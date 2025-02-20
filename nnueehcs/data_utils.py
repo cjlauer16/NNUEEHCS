@@ -260,3 +260,39 @@ def read_dataset_from_yaml(filename: str, dataset_name: str):
 
     config = config['datasets']
     return get_dataset_from_config(config, dataset_name)
+
+
+def get_id_datset_name(dataset_name):
+    return dataset_name + '_id'
+
+
+def get_ood_dataset_name(dataset_name):
+    return dataset_name + '_ood'
+
+
+def get_dataset(dataset_cfg, dataset_name, is_ood=False):
+    if is_ood:
+        ds_name = get_ood_dataset_name(dataset_name)
+    else:
+        ds_name = get_id_datset_name(dataset_name)
+    dset = get_dataset_from_config(dataset_cfg, ds_name)
+    return dset
+
+def prepare_dataset_for_use(dset, training_cfg, scaling_dset=None):
+    ipt = dset.input
+    opt = dset.output
+    if scaling_dset is None:
+        scale_ipt = ipt
+        scale_opt = opt
+    else:
+        scale_ipt = scaling_dset.input
+        scale_opt = scaling_dset.output
+
+    if training_cfg['scaling'] is True:
+        # do min-max scaling to get it to 0-1
+        opt = (opt - scale_opt.min()) / (scale_opt.max() - scale_opt.min())
+        dset.output = opt
+        ipt = (ipt - scale_ipt.min()) / (scale_ipt.max() - scale_ipt.min())
+        dset.input = ipt
+    return dset
+

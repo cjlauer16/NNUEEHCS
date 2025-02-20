@@ -108,6 +108,11 @@ class EvaluationMetric(ABC):
         """Return list of all metrics this evaluator can compute"""
         pass
 
+    @abstractmethod
+    def get_name(cls):
+        """Return name of the metric"""
+        pass
+
 
 class UncertaintyEvaluationMetric(EvaluationMetric):
     """Base class for uncertainty evaluation metrics"""
@@ -191,6 +196,9 @@ class WassersteinEvaluation(UncertaintyEvaluationMetric):
     def get_metrics(cls):
         return [cls.name]
 
+    def get_name(self):
+        return self.name
+
 
 class EuclideanEvaluation(UncertaintyEvaluationMetric):
     name = "euclidean_distance"
@@ -212,6 +220,9 @@ class EuclideanEvaluation(UncertaintyEvaluationMetric):
     @classmethod
     def get_metrics(cls):
         return [cls.name]
+
+    def get_name(self):
+        return self.name
 
 
 class JensenShannonEvaluation(UncertaintyEvaluationMetric):
@@ -273,6 +284,9 @@ class JensenShannonEvaluation(UncertaintyEvaluationMetric):
     def get_metrics(cls):
         return [cls.name]
 
+    def get_name(self):
+        return self.name
+
 
 class TNRatTPX(ClassificationMetric):
     """Calculates True Negative Rate (TNR) at a specified True Positive Rate (TPR)"""
@@ -287,6 +301,7 @@ class TNRatTPX(ClassificationMetric):
         # Create metric name based on percentage (e.g., 'tnr_at_tpr95' for 0.95)
         self.metric_name = f'tnr_at_tpr'
         self.reversed = reversed
+
     @classmethod
     def from_config(cls, config: dict) -> 'TNRatTPX':
         """Factory method to create from config dictionary"""
@@ -338,7 +353,7 @@ class TNRatTPX(ClassificationMetric):
             idx = mask.nonzero()[0][0]  # First index where TPR >= target
             tnr_at_tpr = tnr_values[idx].item()
 
-        return {self.metric_name: tnr_at_tpr}
+        return {str(self): tnr_at_tpr}
 
     @classmethod
     def get_objectives(cls):
@@ -358,6 +373,40 @@ class TNRatTPX(ClassificationMetric):
     def get_instance_metrics(self):
         """Instance-specific metrics with correct metric name"""
         return [self.metric_name]
+
+    def get_name(self):
+        return f'{self.metric_name}{int(100*self.target_tpr)}'
+
+    def __str__(self):
+        return self.get_name()
+
+class PercentileBasedClassifier(ClassificationMetric):
+    def __init__(self, percentile: float, reversed: bool = False):
+        self._classifier = PercentileBasedIdOodClassifier(percentile)
+        self.reversed = reversed
+
+    def _evaluate_scores(self, id_scores: torch.Tensor, ood_scores: torch.Tensor) -> dict:
+        if self.reversed:
+            results = self._classifier._evaluate_scores(-id_scores, -ood_scores)
+        else:
+            results = self._classifier._evaluate_scores(id_scores, ood_scores)
+        return {k: v for k, v in results.items() if k in self.get_metrics()}
+
+    @classmethod
+    def get_objectives(cls):
+        return [{'name': 'sensitivity', 'type': 'maximize'},
+                {'name': 'specificity', 'type': 'maximize'}]
+
+    @classmethod
+    def get_metrics(cls):
+        return ['sensitivity', 'specificity']
+
+    def get_name(self):
+        suffix = f'_{int(100*self._classifier.percentile)}'
+        if self.reversed:
+            suffix = f'_reversed{suffix}'
+        return f'percentile_classification{suffix}'
+
 
 
 class MetricEvaluator:
@@ -397,15 +446,18 @@ class MetricEvaluator:
 def get_evaluator(config: dict) -> MetricEvaluator:
     """Factory function to create evaluator from config"""
     metrics = []
-    for metric_config in config['metrics']:
-        metric_type = metric_config['type']
+    if not isinstance(config, list):
+        config = [config]
+    for metric_config in config:
+        metric_type = metric_config['name']
         if metric_type == 'wasserstein':
             metrics.append(WassersteinEvaluation())
         elif metric_type == 'percentile_classification':
-            if metric_config.get('reversed', False):
+            is_reversed = metric_config.get('reversed', False)
+            if False and is_reversed:
                 metrics.append(ReversedPercentileBasedIdOodClassifier(metric_config['threshold']))
             else:
-                metrics.append(PercentileBasedIdOodClassifier(metric_config['threshold']))
+                metrics.append(PercentileBasedClassifier(metric_config['threshold'], is_reversed))
         elif metric_type == 'tnr_at_tpr':
             metrics.append(TNRatTPX.from_config(metric_config))
         # Add other metric types as needed

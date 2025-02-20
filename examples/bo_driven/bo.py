@@ -8,7 +8,7 @@ from nnueehcs.model_builder import (EnsembleModelBuilder, KDEModelBuilder,
                                     KNNKDEModelBuilder, DeltaUQMLPModelBuilder, 
                                     PAGERModelBuilder, MCDropoutModelBuilder)
 from nnueehcs.training import Trainer, ModelSavingCallback
-from nnueehcs.data_utils import get_dataset_from_config
+from nnueehcs.data_utils import get_dataset, prepare_dataset_for_use
 from nnueehcs.evaluation import get_uncertainty_evaluator, UncertaintyEstimate
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -175,14 +175,6 @@ def get_trainer(trainer_config, name, model, ue_method, dataset, version=None, l
                    )
 
 
-def get_id_datset_name(dataset_name):
-    return dataset_name + '_id'
-
-
-def get_ood_dataset_name(dataset_name):
-    return dataset_name + '_ood'
-
-
 def get_model_builder_class(uq_method):
     if uq_method == 'ensemble':
         return EnsembleModelBuilder
@@ -208,33 +200,6 @@ def build_model(model_cfg, uq_config, uq_method, train_cfg):
                             )
     return builder.build()
 
-
-def get_dataset(dataset_cfg, dataset_name, is_ood=False):
-    if is_ood:
-        ds_name = get_ood_dataset_name(dataset_name)
-    else:
-        ds_name = get_id_datset_name(dataset_name)
-    dset = get_dataset_from_config(dataset_cfg, ds_name)
-    return dset
-
-
-def prepare_dset_for_use(dset, training_cfg, scaling_dset=None):
-    ipt = dset.input
-    opt = dset.output
-    if scaling_dset is None:
-        scale_ipt = ipt
-        scale_opt = opt
-    else:
-        scale_ipt = scaling_dset.input
-        scale_opt = scaling_dset.output
-
-    if training_cfg['scaling'] is True:
-        # do min-max scaling to get it to 0-1
-        opt = (opt - scale_opt.min()) / (scale_opt.max() - scale_opt.min())
-        dset.output = opt
-        ipt = (ipt - scale_ipt.min()) / (scale_ipt.max() - scale_ipt.min())
-        dset.input = ipt
-    return dset
 
 
 def evaluate(model: nn.Module, id_data, ood_data, evaluator) -> dict:
@@ -414,7 +379,7 @@ def main(benchmark, uq_method, config, dataset, output, restart):
         uq_config[uq_method].update(trial)
 
         dset = get_dataset(dataset_cfg, dataset)
-        dset = prepare_dset_for_use(dset, training_cfg)
+        dset = prepare_dataset_for_use(dset, training_cfg)
         model = build_model(model_cfg, uq_config, uq_method, training_cfg).to(dset.dtype)
         trainer = get_trainer(trainer_cfg, name, model, uq_method, dataset,
                               version=f'bo_trial_{bo_trial}',
@@ -438,9 +403,9 @@ def main(benchmark, uq_method, config, dataset, output, restart):
             # we have to scale ood relative to ID
             # we MUST scale OOD first because this method
             # modifies in place
-            dset_ood = prepare_dset_for_use(dset_ood, training_cfg,
+            dset_ood = prepare_dataset_for_use(dset_ood, training_cfg,
                                             scaling_dset=dset_id)
-            dset_id = prepare_dset_for_use(dset_id, training_cfg)
+            dset_id = prepare_dataset_for_use(dset_id, training_cfg)
 
             results = evaluate(model, dset_id, dset_ood, evaluator)
             print(results)

@@ -69,6 +69,12 @@ class ResultsInstance:
         full_path = Path(self.results_dir) / self.files["trial_results"]
         return pd.read_csv(full_path)
 
+    def is_finished(self):
+        return os.path.exists(self.get_trial_results_file())
+
+    def __str__(self):
+        return f"{self.results_dir}"
+
 class ResultsComposite:
     """
     This class represents a composite of results.
@@ -158,16 +164,16 @@ class ResultsComposite:
         return ResultsInstance(os.path.join(self.results_dir, benchmark_name, dataset_name, method_name, trial_name))
     
     def get_num_trials(self, benchmark_name: str, dataset_name: str, method_name: str):
-        return len(self.get_trial_names(benchmark_name, dataset_name, method_name))
+        return len(list(self.get_trial_names(benchmark_name, dataset_name, method_name)))
     
     def get_num_methods(self, benchmark_name: str, dataset_name: str):
-        return len(self.get_method_names(benchmark_name, dataset_name))
+        return len(list(self.get_method_names(benchmark_name, dataset_name)))
     
     def get_num_datasets(self, benchmark_name: str):
-        return len(self.get_dataset_names(benchmark_name))
+        return len(list(self.get_dataset_names(benchmark_name)))
     
     def get_num_benchmarks(self):
-        return len(self.get_benchmark_names())
+        return len(list(self.get_benchmark_names()))
         
     def apply_functor(self, functor: Callable):
         """

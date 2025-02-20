@@ -444,3 +444,16 @@ bo_config:
   # tracking_metrics:
   #   # - ue_time
   #   - jensen_shannon_distance
+
+evaluation:
+  metrics:
+    - name: tnr_at_tpr
+      target_tpr: 0.95
+      reversed: true
+    - name: percentile_classification
+      threshold: 0.8
+      reversed: true
+    - name: percentile_classification
+      threshold: 0.8
+      reversed: false
+
