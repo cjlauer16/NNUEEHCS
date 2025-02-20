@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
-from typing import Union, Tuple
+from typing import Union, Tuple, Callable
 import numpy as np
+import time
 from scipy.stats import wasserstein_distance
 from abc import ABC, abstractmethod
 from .classification import PercentileBasedIdOodClassifier, ReversedPercentileBasedIdOodClassifier
@@ -287,6 +288,67 @@ class JensenShannonEvaluation(UncertaintyEvaluationMetric):
     def get_name(self):
         return self.name
 
+class RuntimeEvaluation(EvaluationMetric):
+    name = "runtime"
+    def __init__(self, num_trials: int = 20, num_warmup: int = 5):
+        self.num_trials = num_trials
+        self.num_warmup = num_warmup
+
+    @classmethod
+    def from_config(cls, config: dict) -> 'RuntimeEvaluation':
+        """Factory method to create from config dictionary"""
+        return cls(
+            num_trials=config.get('trials', 20),
+            num_warmup=config.get('warmup', 5)
+        )
+
+    def evaluate(self, model: nn.Module, id_data: tuple, ood_data: tuple) -> dict:
+        raise NotImplementedError("Cannot call evaluate on base class")
+
+    def _evaluate(self, model: nn.Module, id_data: tuple, ood_data: tuple, eval_functor: Callable) -> dict:
+        model.eval()
+        runtimes = np.zeros(self.num_trials)
+        data_combined = torch.cat([id_data[0], ood_data[0]])
+        with torch.no_grad():
+            for _ in range(self.num_warmup):
+                eval_functor(model, data_combined)
+            for trial in range(self.num_trials):
+                start_time = time.time()
+                retval = eval_functor(model, data_combined)
+                end_time = time.time()
+                runtimes[trial] = end_time - start_time
+        mean = np.mean(runtimes)
+        std = np.std(runtimes)
+        return {self.name: mean, 'runtime_std': std}
+
+    @classmethod
+    def get_objectives(cls):
+        return [{
+            "name": cls.name,
+            "type": "minimize"
+        }]
+
+    @classmethod
+    def get_metrics(cls):
+        return [cls.name, 'runtime_std']
+
+    def get_name(self):
+        return self.name
+
+class BaseModelRuntimeEvaluation(RuntimeEvaluation):
+    name = "base_model_runtime"
+
+    def evaluate(self, model: nn.Module, id_data: tuple, ood_data: tuple) -> dict:
+        callable = lambda model, data: model(data)
+        return super()._evaluate(model, id_data, ood_data, callable)
+
+class UncertaintyEstimatingRuntimeEvaluation(RuntimeEvaluation):
+    name = "uncertainty_estimating_runtime"
+
+    def evaluate(self, model: nn.Module, id_data: tuple, ood_data: tuple) -> dict:
+        callable = lambda model, data: model(data, return_ue=True)
+        return super()._evaluate(model, id_data, ood_data, callable)
+
 
 class TNRatTPX(ClassificationMetric):
     """Calculates True Negative Rate (TNR) at a specified True Positive Rate (TPR)"""
@@ -460,6 +522,10 @@ def get_evaluator(config: dict) -> MetricEvaluator:
                 metrics.append(PercentileBasedClassifier(metric_config['threshold'], is_reversed))
         elif metric_type == 'tnr_at_tpr':
             metrics.append(TNRatTPX.from_config(metric_config))
+        elif metric_type == 'runtime':
+            metrics.append(BaseModelRuntimeEvaluation.from_config(metric_config))
+        elif metric_type == 'uncertainty_estimating_runtime':
+            metrics.append(UncertaintyEstimatingRuntimeEvaluation.from_config(metric_config))
         # Add other metric types as needed
     
     return MetricEvaluator(metrics)
@@ -501,5 +567,14 @@ def get_uncertainty_evaluator(metric_config: str | dict) -> EvaluationMetric:
         target_tpr = metric_config['target_tpr']
         reversed = metric_config.get('reversed', False)
         return TNRatTPX(target_tpr, reversed)
-            
-    raise ValueError(f"Invalid metric type: {name}")
+    elif name == 'runtime':
+        kwargs = {}
+        if 'trials' in metric_config:
+            kwargs['num_trials'] = metric_config['trials']
+        if 'warmup' in metric_config:
+            kwargs['num_warmup'] = metric_config['warmup']
+        return BaseModelRuntimeEvaluation(**kwargs)
+    elif name == 'uncertainty_estimating_runtime':
+        return UncertaintyEstimatingRuntimeEvaluation()
+    else:
+        raise ValueError(f"Invalid metric type: {name}")

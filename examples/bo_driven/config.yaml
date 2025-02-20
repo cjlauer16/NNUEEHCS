@@ -456,4 +456,6 @@ evaluation:
     - name: percentile_classification
       threshold: 0.8
       reversed: false
+    - name: runtime
+    - name: uncertainty_estimating_runtime
 
