@@ -305,7 +305,7 @@ class RuntimeEvaluation(EvaluationMetric):
     def evaluate(self, model: nn.Module, id_data: tuple, ood_data: tuple) -> dict:
         raise NotImplementedError("Cannot call evaluate on base class")
 
-    def _evaluate(self, model: nn.Module, id_data: tuple, ood_data: tuple, eval_functor: Callable) -> dict:
+    def _evaluate(self, model: nn.Module, id_data: tuple, ood_data: tuple, eval_functor: Callable, return_raw: bool = False) -> dict:
         model.eval()
         runtimes = np.zeros(self.num_trials)
         data_combined = torch.cat([id_data[0], ood_data[0]])
@@ -319,7 +319,10 @@ class RuntimeEvaluation(EvaluationMetric):
                 runtimes[trial] = end_time - start_time
         mean = np.mean(runtimes)
         std = np.std(runtimes)
-        return {self.name: mean, 'runtime_std': std}
+        if return_raw:
+            return {'runtime': mean, 'runtime_std': std, 'runtimes': runtimes}
+        else:
+            return {'runtime': mean, 'runtime_std': std}
 
     @classmethod
     def get_objectives(cls):
@@ -348,6 +351,30 @@ class UncertaintyEstimatingRuntimeEvaluation(RuntimeEvaluation):
     def evaluate(self, model: nn.Module, id_data: tuple, ood_data: tuple) -> dict:
         callable = lambda model, data: model(data, return_ue=True)
         return super()._evaluate(model, id_data, ood_data, callable)
+
+class BaseModelThroughputEvaluation(RuntimeEvaluation):
+    name = "base_model_throughput"
+
+    def _convert_to_throughput(self, runtimes: dict, total_samples: int) -> float:
+        runtimes = runtimes['runtimes']
+        throughput = total_samples / runtimes
+        throughput_mean = np.mean(throughput)
+        throughput_std = np.std(throughput)
+        return throughput_mean, throughput_std
+
+    def evaluate(self, model: nn.Module, id_data: tuple, ood_data: tuple) -> dict:
+        runtimes = super()._evaluate(model, id_data, ood_data, lambda model, data: model(data), return_raw=True)
+        total_samples = id_data[0].shape[0] + ood_data[0].shape[0]
+        throughput_mean, throughput_std = self._convert_to_throughput(runtimes, total_samples)
+        return {self.name: throughput_mean, 'throughput_std': throughput_std}
+
+class UncertaintyEstimatingThroughputEvaluation(BaseModelThroughputEvaluation):
+    name = "uncertainty_estimating_throughput"
+    def evaluate(self, model: nn.Module, id_data: tuple, ood_data: tuple) -> dict:
+        runtimes = super()._evaluate(model, id_data, ood_data, lambda model, data: model(data, return_ue=True), return_raw=True)
+        total_samples = id_data[0].shape[0] + ood_data[0].shape[0]
+        throughput_mean, throughput_std = self._convert_to_throughput(runtimes, total_samples)
+        return {self.name: throughput_mean, 'throughput_std': throughput_std}
 
 
 class TNRatTPX(ClassificationMetric):
@@ -522,6 +549,10 @@ def get_evaluator(config: dict) -> MetricEvaluator:
             metrics.append(BaseModelRuntimeEvaluation.from_config(metric_config))
         elif metric_type == 'uncertainty_estimating_runtime':
             metrics.append(UncertaintyEstimatingRuntimeEvaluation.from_config(metric_config))
+        elif metric_type == 'base_model_throughput':
+            metrics.append(BaseModelThroughputEvaluation.from_config(metric_config))
+        elif metric_type == 'uncertainty_estimating_throughput':
+            metrics.append(UncertaintyEstimatingThroughputEvaluation.from_config(metric_config))
         # Add other metric types as needed
     
     return MetricEvaluator(metrics)
