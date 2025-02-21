@@ -4,6 +4,7 @@ from typing import Union, Tuple, Callable
 import numpy as np
 import time
 from scipy.stats import wasserstein_distance
+from sklearn.metrics import roc_auc_score
 from abc import ABC, abstractmethod
 from .classification import PercentileBasedIdOodClassifier, ReversedPercentileBasedIdOodClassifier
 
@@ -465,6 +466,36 @@ class TNRatTPX(ClassificationMetric):
     def __str__(self):
         return self.get_name()
 
+class AUROC(ClassificationMetric):
+    """
+    Calculate AUROC given some percentile-based classification
+    threshold.
+    """
+    name = "auroc"
+
+    def _evaluate_scores(self, id_scores: torch.Tensor, ood_scores: torch.Tensor) -> dict:
+        # Convert to numpy arrays and flatten
+        id_scores = id_scores.cpu().numpy().flatten()
+        ood_scores = ood_scores.cpu().numpy().flatten()
+
+        # Combine scores and create true labels (1 for OOD, 0 for ID)
+        y_scores = np.concatenate([id_scores, ood_scores])
+        y_true = np.concatenate([np.zeros_like(id_scores), np.ones_like(ood_scores)])
+
+        # Compute AUROC using raw scores
+        return {self.name: roc_auc_score(y_true, y_scores)}
+
+    @classmethod
+    def get_objectives(cls):
+        return [{'name': 'auroc', 'type': 'maximize'}]
+
+    @classmethod
+    def get_metrics(cls):
+        return ['auroc']
+    
+    def get_name(self):
+        return self.name
+
 class PercentileBasedClassifier(ClassificationMetric):
     def __init__(self, percentile: float, reversed: bool = False):
         self._classifier = PercentileBasedIdOodClassifier(percentile)
@@ -553,6 +584,8 @@ def get_evaluator(config: dict) -> MetricEvaluator:
             metrics.append(BaseModelThroughputEvaluation.from_config(metric_config))
         elif metric_type == 'uncertainty_estimating_throughput':
             metrics.append(UncertaintyEstimatingThroughputEvaluation.from_config(metric_config))
+        elif metric_type == 'auroc':
+            metrics.append(AUROC())
         # Add other metric types as needed
     
     return MetricEvaluator(metrics)
@@ -603,5 +636,7 @@ def get_uncertainty_evaluator(metric_config: str | dict) -> EvaluationMetric:
         return BaseModelRuntimeEvaluation(**kwargs)
     elif name == 'uncertainty_estimating_runtime':
         return UncertaintyEstimatingRuntimeEvaluation()
+    elif name == 'mean_score':
+        return MeanScoreEvaluation()
     else:
         raise ValueError(f"Invalid metric type: {name}")
