@@ -370,52 +370,48 @@ class TNRatTPX(ClassificationMetric):
         return cls(target_tpr=config['target_tpr'], reversed=config.get('reversed', False))
 
     def _evaluate_scores(self, id_scores: torch.Tensor, ood_scores: torch.Tensor) -> dict:
-        # Flatten scores if they're multi-dimensional
+        # Flatten scores
         id_scores = id_scores.reshape(-1)
         ood_scores = ood_scores.reshape(-1)
-        
-        # Sort scores to compute TPR and TNR
-        thresholds = torch.sort(torch.cat([id_scores, ood_scores])).values
-        
-        # Calculate TPR and TNR for each threshold
-        tpr_values = []
-        tnr_values = []
-        
+    
+        # Perfect separation check
+        if self.reversed:
+            min_id = id_scores.min()
+            max_ood = ood_scores.max()
+            if min_id > max_ood:
+                return {str(self): 1.0}
+        else:
+            max_id = id_scores.max()
+            min_ood = ood_scores.min()
+            if max_id < min_ood:
+                return {str(self): 1.0}
+    
+        # Sort all scores together to get thresholds
+        all_scores = torch.cat([id_scores, ood_scores])
+        thresholds = torch.unique(all_scores)
+    
+        # Arrays to store results
+        best_tnr = 0.0
+    
+        n_id = len(id_scores)
+        n_ood = len(ood_scores)
+    
         for threshold in thresholds:
-            # For OOD detection:
-            # True Positive: OOD correctly identified as OOD (score > threshold)
-            # True Negative: ID correctly identified as ID (score <= threshold)
             if self.reversed:
                 tp = (id_scores > threshold).sum().item()
                 tn = (ood_scores <= threshold).sum().item()
-                fp = (id_scores <= threshold).sum().item()
-                fn = (ood_scores > threshold).sum().item()
             else:
                 tp = (ood_scores > threshold).sum().item()
                 tn = (id_scores <= threshold).sum().item()
-                fp = (id_scores > threshold).sum().item()
-                fn = (ood_scores <= threshold).sum().item()
-            
-            tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
-            tnr = tn / (tn + fp) if (tn + fp) > 0 else 0
-            
-            tpr_values.append(tpr)
-            tnr_values.append(tnr)
-        
-        # Convert to numpy for interpolation
-        tpr_values = torch.tensor(tpr_values)
-        tnr_values = torch.tensor(tnr_values)
-        
-        # Find the TNR at the target TPR
-        # Get the closest TPR value that's >= our target
-        mask = tpr_values >= self.target_tpr
-        if not mask.any():
-            tnr_at_tpr = 0.0  # If we never reach the target TPR
-        else:
-            idx = mask.nonzero()[0][0]  # First index where TPR >= target
-            tnr_at_tpr = tnr_values[idx].item()
 
-        return {str(self): tnr_at_tpr}
+            tpr = tp / n_ood if n_ood > 0 else 0
+            tnr = tn / n_id if n_id > 0 else 0
+
+            # If we found a TPR that exceeds our target, update best TNR
+            if tpr >= self.target_tpr and tnr > best_tnr:
+                best_tnr = tnr
+
+        return {str(self): best_tnr}
 
     @classmethod
     def get_objectives(cls):
