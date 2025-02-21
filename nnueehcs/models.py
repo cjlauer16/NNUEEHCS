@@ -153,7 +153,9 @@ class KDEMLPModel(MLPModel):
             import time
             test = time.time()
             log_dens = self.kde.score_samples(x.detach().cpu().numpy())
-            dens = torch.exp(torch.tensor(log_dens))
+            # negate so ID scores associated with higher density
+            # receive lower uncertainty scores.
+            dens = -torch.exp(torch.tensor(log_dens))
             tend = time.time()
             print(tend-test)
             return pred, dens
@@ -196,7 +198,9 @@ class KNNKDEMLPModel(MLPModel):
             raise ValueError("KDE not fitted yet")
         pred = super().forward(x)
         if return_ue:
-            return pred, self._kde.kernel_density(x)
+            # negate so ID scores associated with higher density
+            # receive lower uncertainty scores.
+            return pred, -self._kde.kernel_density(x)
         return pred
 
     class KNNKDEFitCallback(L.callbacks.Callback):
@@ -243,6 +247,8 @@ class DeltaUQMLP(deltaUQ_MLP, WrappedModelBase):
             return deltaUQ_MLP.forward(self, x)
         else:
             if not hasattr(self, 'anchors'):
+                if return_ue:
+                    print("WARNING: Returning UE without anchors")
                 return deltaUQ_MLP.forward(self, x)
             return deltaUQ_MLP.forward(self, x, anchors=self.anchors, n_anchors=self.num_anchors, return_std=return_ue)
 
