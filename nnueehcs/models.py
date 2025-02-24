@@ -88,13 +88,30 @@ class EnsembleModel(WrappedModelBase):
     def __init__(self, models, **kwargs):
         super(EnsembleModel, self).__init__(**kwargs)
         self.models = nn.ModuleList(models)
+        self.params, self.buffers = torch.func.stack_module_state(self.models)
+
+    def call_single_model(self, params, buffers, x):
+        return torch.func.functional_call(self.models[0], (params, buffers), (x,))
 
     def forward(self, x, return_ue=False):
-        outputs = torch.stack([model(x) for model in self.models])
+        outputs = torch.vmap(self.call_single_model, (0, 0, None))(self.params, self.buffers, x)
+
         if return_ue:
             std = outputs.std(0)
             return outputs.mean(0), std
         return outputs.mean(0)
+        
+    def to(self, device):
+        super().to(device)
+        for model in self.models:
+            model.to(device)
+            
+        for param_name in self.params:
+            self.params[param_name] = self.params[param_name].to(device)
+            
+        for buffer_name in self.buffers:
+            self.buffers[buffer_name] = self.buffers[buffer_name].to(device)
+        return self
 
 
 class MCDropoutModel(WrappedModelBase):
