@@ -352,18 +352,27 @@ def main(benchmark, uq_method, config, dataset, output, restart):
         try:
             bo_idx, ax_client, trial_results = get_restart(output, name, dataset, uq_method)
             print(f'Restarting from trial {bo_idx}')
-        except ValueError:
-            raise ValueError(f'No restart index found in {output}')
+        except ValueError as e:
+            print(f"Warning: {str(e)}. Starting fresh optimization run.")
+            bo_idx = 0
+            trial_results = dict()
+            ax_client = AxClient()
+            ax_client.create_experiment(name="UE Tuning",
+                                      parameters=bo_params.parameter_space,
+                                      objectives=bo_params.objectives,
+                                      tracking_metric_names=bo_params.tracking_metric_names,
+                                      outcome_constraints=bo_params.parameter_constraints
+                                     )
     else:
         bo_idx = 0
         trial_results = dict()
         ax_client = AxClient()
         ax_client.create_experiment(name="UE Tuning",
-                                    parameters=bo_params.parameter_space,
-                                    objectives=bo_params.objectives,
-                                    tracking_metric_names=bo_params.tracking_metric_names,
-                                    outcome_constraints=bo_params.parameter_constraints
-                                   )
+                                  parameters=bo_params.parameter_space,
+                                  objectives=bo_params.objectives,
+                                  tracking_metric_names=bo_params.tracking_metric_names,
+                                  outcome_constraints=bo_params.parameter_constraints
+                                 )
     for bo_trial in range(bo_idx, bo_config['trials']):
         trial, index = ax_client.get_next_trial()
         lr = trial['learning_rate']
