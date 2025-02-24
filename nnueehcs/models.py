@@ -116,25 +116,55 @@ class EnsembleModel(WrappedModelBase):
 
 
 class MCDropoutModel(WrappedModelBase):
-    def __init__(self, model, num_samples=100, dropout_percent = 0.5, **kwargs):
+    def __init__(self, model, num_samples=100, dropout_percent=0.5, **kwargs):
         super(MCDropoutModel, self).__init__(**kwargs)
         self.model = model
         self.num_samples = num_samples
-        self.dropout_perent = dropout_percent
+        self.dropout_percent = dropout_percent
+        
+        for module in self.model.modules():
+            if isinstance(module, nn.Dropout):
+                module.p = dropout_percent
+                
+        self.stacked = False
+        
+    def _ensure_stacked(self):
+        if not self.stacked:
+            params, buffers = stack_module_state([self.model] * self.num_samples)
+            self.params, self.buffers = params, buffers
+            self.stacked = True
 
+    def call_single_forward(self, params, buffers, x):
+        return torch.func.functional_call(self.model, (params, buffers), (x,))
 
     def forward(self, x, return_ue=False):
-        preds = torch.stack([self.model(x) for _ in range(self.num_samples)])
-        if return_ue:
-            return preds.mean(0), preds.std(0)
-        return preds.mean(0)
-
+        if self.training:
+            return self.model(x)
+        else:
+            self._ensure_stacked()
+            preds = torch.vmap(self.call_single_forward, (0, 0, None), 
+                              randomness='different')(self.params, self.buffers, x)
+            
+            if return_ue:
+                return preds.mean(0), preds.std(0)
+            return preds.mean(0)
 
     def eval(self):
         super().eval()
         for module in self.model.modules():
             if isinstance(module, nn.Dropout):
                 module.train()
+                
+    def to(self, device):
+        super().to(device)
+        self.model.to(device)
+        if self.stacked:
+            for param_name in self.params:
+                self.params[param_name] = self.params[param_name].to(device)
+            for buffer_name in self.buffers:
+                self.buffers[buffer_name] = self.buffers[buffer_name].to(device)
+        return self
+
 
 class MLPModel(WrappedModelBase):
     def __init__(self, model, **kwargs):
