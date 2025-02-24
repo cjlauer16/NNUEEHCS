@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 import pytorch_lightning as L
 import copy
+from torch.func import vmap, stack_module_state
 
 training_defaults = {
     'learning_rate': 1e-3,
