@@ -220,7 +220,10 @@ class EnsembleModelBuilder(ModelBuilder):
     def build(self):
         info = self.get_info()
         build = super().build
-        base_models = [build() for _ in range(info.get_num_models())]
+        base_models = list()
+        for i in range(info.get_num_models()):
+            torch.manual_seed(42 + i)
+            base_models.append(build())
         return EnsembleModel(base_models, train_config=self.train_config)
 
     def update_info(self, info):
