@@ -343,22 +343,29 @@ class PAGERMLP(DeltaUQMLP, WrappedModelBase):
         conformal_scores = self._score_samples(x, self.anchors,
                                                self.anchors_Y)
 
-        return pred, (uncertainty, conformal_scores)
+        # uncertainty score should be the max of uncertainty, conformal_scores
+        uncertainty_score = torch.maximum(uncertainty, conformal_scores)
+        
+        return pred, uncertainty_score
 
     def _anchored_predictions(self, x, anchors):
-        p_matrix = list()
-        for sample in x:
-            if len(sample.shape) == 1:
-                sample = sample.unsqueeze(0)
-            p = deltaUQ_MLP.forward(self,
-                                    anchors,
-                                    anchors=sample,
-                                    n_anchors=len(sample),
-                                    return_pred_matrix=True
-                                    )
-            p_matrix.append(p)
-        return torch.concat(p_matrix).squeeze(-1)
-
+        batch_size = x.shape[0]
+        n_anchors = anchors.shape[0]
+        
+        all_samples = []
+        for i in range(batch_size):
+            sample = x[i:i+1]
+            all_samples.append(sample)
+        
+        all_samples = torch.cat(all_samples, dim=0)
+        
+        p_matrix = deltaUQ_MLP.forward(self,
+                                      anchors,
+                                      anchors=all_samples,
+                                      n_anchors=batch_size,
+                                      return_pred_matrix=True)
+        
+        return p_matrix.squeeze(-1)
 
     def _score_samples(self, x, anchors_X, anchors_Y):
         p_matrix = self._anchored_predictions(x, anchors_X)
