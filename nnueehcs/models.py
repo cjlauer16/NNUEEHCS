@@ -282,6 +282,8 @@ class DeltaUQMLP(deltaUQ_MLP, WrappedModelBase):
         WrappedModelBase.__init__(self, **kwargs)
         self.net = net
         self.num_anchors = num_anchors
+        # Initialize anchors as None to prevent errors
+        self.register_buffer('_anchors', None)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -294,7 +296,7 @@ class DeltaUQMLP(deltaUQ_MLP, WrappedModelBase):
         if self.training:
             return deltaUQ_MLP.forward(self, x)
         else:
-            if not hasattr(self, 'anchors'):
+            if not hasattr(self, 'anchors') or self._anchors is None:
                 if return_ue:
                     print("WARNING: Returning UE without anchors")
                 return deltaUQ_MLP.forward(self, x)
@@ -317,8 +319,8 @@ class DeltaUQMLP(deltaUQ_MLP, WrappedModelBase):
             self._train_data_to_fit = []
             self._epochs = 0
 
-        def on_train_epoch_end(self, trainer, pl_module):
-            if self._epochs == 0:
+        def on_validation_epoch_start(self, trainer, pl_module):
+            if self._epochs == 0 and len(self._train_data_to_fit) > 0:
                 trn_data = torch.cat(self._train_data_to_fit)
                 pl_module.anchors = trn_data[0:pl_module.num_anchors].detach().clone()
             self._epochs += 1
@@ -372,7 +374,6 @@ class PAGERMLP(DeltaUQMLP, WrappedModelBase):
         score = torch.max(torch.abs(p_matrix - anchors_Y.T), dim=1)[0]
         return score
 
-
     def get_callbacks(self):
         return [PAGERMLP.PAGERGetAnchorsCallback()]
 
@@ -396,7 +397,7 @@ class PAGERMLP(DeltaUQMLP, WrappedModelBase):
             self._anchor_Y = []
             self._epochs = 0
 
-        def on_train_epoch_end(self, trainer, pl_module):
+        def on_validation_epoch_start(self, trainer, pl_module):
             if self._epochs == 0:
                 nanchors = pl_module.num_anchors
                 anchor_X = torch.cat(self._anchor_X)
