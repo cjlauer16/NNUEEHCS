@@ -371,7 +371,7 @@ class PAGERMLP(DeltaUQMLP, WrappedModelBase):
 
     def _score_samples(self, x, anchors_X, anchors_Y):
         p_matrix = self._anchored_predictions(x, anchors_X)
-        score = torch.max(torch.abs(p_matrix - anchors_Y.T), dim=1)[0]
+        score = torch.max(torch.abs(p_matrix - anchors_Y.T), dim=1)[0].unsqueeze(-1)
         return score
 
     def get_callbacks(self):
