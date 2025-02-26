@@ -86,17 +86,22 @@ class WrappedModelBase(pl.LightningModule):
 
 
 class EnsembleModel(WrappedModelBase):
-    def __init__(self, models, **kwargs):
+    def __init__(self, models, vectorize=False, **kwargs):
         super(EnsembleModel, self).__init__(**kwargs)
         self.models = nn.ModuleList(models)
-        self.params, self.buffers = torch.func.stack_module_state(self.models)
+        self.vectorize = vectorize
+        if vectorize:
+            self.params, self.buffers = torch.func.stack_module_state(self.models)
 
     def call_single_model(self, params, buffers, x):
         return torch.func.functional_call(self.models[0], (params, buffers), (x,))
 
     def forward(self, x, return_ue=False):
-        outputs = torch.vmap(self.call_single_model, (0, 0, None))(self.params, self.buffers, x)
-
+        if self.vectorize:
+            outputs = torch.vmap(self.call_single_model, (0, 0, None))(self.params, self.buffers, x)
+        else:
+            outputs = torch.stack([model(x) for model in self.models])
+        
         if return_ue:
             std = outputs.std(0)
             return outputs.mean(0), std
@@ -107,20 +112,22 @@ class EnsembleModel(WrappedModelBase):
         for model in self.models:
             model.to(device)
             
-        for param_name in self.params:
-            self.params[param_name] = self.params[param_name].to(device)
-            
-        for buffer_name in self.buffers:
-            self.buffers[buffer_name] = self.buffers[buffer_name].to(device)
+        if self.vectorize:
+            for param_name in self.params:
+                self.params[param_name] = self.params[param_name].to(device)
+                
+            for buffer_name in self.buffers:
+                self.buffers[buffer_name] = self.buffers[buffer_name].to(device)
         return self
 
 
 class MCDropoutModel(WrappedModelBase):
-    def __init__(self, model, num_samples=100, dropout_percent=0.5, **kwargs):
+    def __init__(self, model, num_samples=100, dropout_percent=0.5, vectorize=False, **kwargs):
         super(MCDropoutModel, self).__init__(**kwargs)
         self.model = model
         self.num_samples = num_samples
         self.dropout_percent = dropout_percent
+        self.vectorize = vectorize
         
         for module in self.model.modules():
             if isinstance(module, nn.Dropout):
@@ -129,7 +136,7 @@ class MCDropoutModel(WrappedModelBase):
         self.stacked = False
         
     def _ensure_stacked(self):
-        if not self.stacked:
+        if not self.stacked and self.vectorize:
             params, buffers = stack_module_state([self.model] * self.num_samples)
             self.params, self.buffers = params, buffers
             self.stacked = True
@@ -141,9 +148,15 @@ class MCDropoutModel(WrappedModelBase):
         if self.training:
             return self.model(x)
         else:
-            self._ensure_stacked()
-            preds = torch.vmap(self.call_single_forward, (0, 0, None), 
-                              randomness='different')(self.params, self.buffers, x)
+            if self.vectorize:
+                self._ensure_stacked()
+                preds = torch.vmap(self.call_single_forward, (0, 0, None), 
+                                  randomness='different')(self.params, self.buffers, x)
+            else:
+                preds = []
+                for _ in range(self.num_samples):
+                    preds.append(self.model(x))
+                preds = torch.stack(preds)
             
             if return_ue:
                 return preds.mean(0), preds.std(0)
@@ -336,6 +349,19 @@ class DeltaUQMLP(deltaUQ_MLP, WrappedModelBase):
 
 
 class PAGERMLP(DeltaUQMLP, WrappedModelBase):
+    def __init__(self, base_model, estimator='std', num_anchors=5, vectorize=False, **kwargs):
+        DeltaUQMLP.__init__(self, base_model, estimator)
+        # somehow, the constructor of WrappedModelBase
+        # removes our 'net' member. We need to re-add it
+        # after the initialization
+        net = self.net
+        WrappedModelBase.__init__(self, **kwargs)
+        self.net = net
+        self.num_anchors = num_anchors
+        self.vectorize = vectorize
+        # Initialize anchors as None to prevent errors
+        self.register_buffer('_anchors', None)
+
     def forward(self, x, return_ue=False):
         res = DeltaUQMLP.forward(self, x, return_ue)
         if not return_ue:
@@ -351,21 +377,29 @@ class PAGERMLP(DeltaUQMLP, WrappedModelBase):
         return pred, uncertainty_score
 
     def _anchored_predictions(self, x, anchors):
-        batch_size = x.shape[0]
-        n_anchors = anchors.shape[0]
-        
-        all_samples = []
-        for i in range(batch_size):
-            sample = x[i:i+1]
-            all_samples.append(sample)
-        
-        all_samples = torch.cat(all_samples, dim=0)
-        
-        p_matrix = deltaUQ_MLP.forward(self,
-                                      anchors,
-                                      anchors=all_samples,
-                                      n_anchors=batch_size,
-                                      return_pred_matrix=True)
+        if self.vectorize:
+            batch_size = x.shape[0]
+            
+            all_samples = x
+            
+            p_matrix = deltaUQ_MLP.forward(self,
+                                          anchors,
+                                          anchors=all_samples,
+                                          n_anchors=batch_size,
+                                          return_pred_matrix=True)
+        else:
+            p_matrix = list()
+            for sample in x:
+                if len(sample.shape) == 1:
+                    sample = sample.unsqueeze(0)
+                p = deltaUQ_MLP.forward(self,
+                                        anchors,
+                                        anchors=sample,
+                                        n_anchors=len(sample),
+                                        return_pred_matrix=True
+                                        )
+                p_matrix.append(p)
+            p_matrix = torch.concat(p_matrix)
         
         return p_matrix.squeeze(-1)
 
