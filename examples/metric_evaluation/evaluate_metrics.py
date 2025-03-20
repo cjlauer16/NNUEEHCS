@@ -30,7 +30,10 @@ def find_best_training_run(results_instance: ResultsInstance, train_eval_metric)
     """
     res = pd.read_csv(results_instance.get_trial_results_file())
     train_metric_name = train_eval_metric.get_metrics()[0]
-    max_train_metric_value = res[train_metric_name].max()
+    if train_eval_metric.get_objectives()[0]['type'] == 'maximize':
+        max_train_metric_value = res[train_metric_name].max()
+    else:
+        max_train_metric_value = res[train_metric_name].min()
     max_train_metric_instance = res[res[train_metric_name] == max_train_metric_value].iloc[0]
     return max_train_metric_value, max_train_metric_instance
 
@@ -150,7 +153,7 @@ def process_benchmark_dataset(composite, config, benchmark, dataset, evaluators,
     training_cfg = config['training']
     train_eval_metric = get_evaluator(config['bo_config']['evaluation_metric']).metrics[0]
     print(f"Using training evaluation metric: {train_eval_metric.get_name()}")
-    
+
     dataset_id, dataset_ood = prepare_datasets(dataset_cfg, dataset, training_cfg)
     
     results = []
@@ -174,6 +177,7 @@ def process_benchmark_dataset(composite, config, benchmark, dataset, evaluators,
             # Get model for this trial
             trial_instance = composite.get_results_instance(benchmark, dataset, method, trial)
             model = torch.load(trial_instance.get_model_file(), map_location=device)
+            model = model.to(dataset_id.input.dtype)
             model.eval()
             
             metric_results = evaluate_model_metrics(model, dataset_id, dataset_ood, evaluators)
