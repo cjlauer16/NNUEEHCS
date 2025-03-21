@@ -289,6 +289,37 @@ class JensenShannonEvaluation(UncertaintyEvaluationMetric):
     def get_name(self):
         return self.name
 
+class MaxMemoryUsageEvaluation(EvaluationMetric):
+    name = "max_memory_usage"
+
+    def evaluate(self, model: nn.Module, id_data: tuple, ood_data: tuple) -> dict:
+        import gc
+
+        model.eval()
+        with torch.no_grad():
+            torch.cuda.empty_cache()
+            gc.collect()
+            torch.cuda.reset_peak_memory_stats()
+            id_ood_combined = torch.cat([id_data[0], ood_data[0]])
+            _, _ = model(id_ood_combined, return_ue=True)
+            max_memory_usage = torch.cuda.max_memory_allocated()
+            max_memory_usage_mb = max_memory_usage / (1024 * 1024)
+        return {
+            'max_memory_usage': max_memory_usage_mb
+        }
+
+    def get_objectives(cls):
+        return [{
+            "name": cls.name,
+            "type": "minimize"
+        }]
+
+    def get_metrics(cls):
+        return [cls.name]
+
+    def get_name(self):
+        return self.name
+
 class RuntimeEvaluation(EvaluationMetric):
     name = "runtime"
     def __init__(self, num_trials: int = 20, num_warmup: int = 5):
@@ -586,6 +617,8 @@ def get_evaluator(config: dict) -> MetricEvaluator:
             metrics.append(UncertaintyEstimatingThroughputEvaluation.from_config(metric_config))
         elif metric_type == 'auroc':
             metrics.append(AUROC())
+        elif metric_type == 'max_memory_usage':
+            metrics.append(MaxMemoryUsageEvaluation())
         # Add other metric types as needed
     
     return MetricEvaluator(metrics)
@@ -638,5 +671,7 @@ def get_uncertainty_evaluator(metric_config: str | dict) -> EvaluationMetric:
         return UncertaintyEstimatingRuntimeEvaluation()
     elif name == 'mean_score':
         return MeanScoreEvaluation()
+    elif name == 'auroc':
+        return AUROC()
     else:
         raise ValueError(f"Invalid metric type: {name}")
