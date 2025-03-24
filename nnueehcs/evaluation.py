@@ -499,6 +499,21 @@ class UncertaintyEstimatingThroughputEvaluation(BaseModelThroughputEvaluation):
         throughput_mean, throughput_std = self._convert_to_throughput(runtimes, total_samples)
         return {self.name: throughput_mean, 'throughput_std': throughput_std}
 
+    @classmethod
+    def get_objectives(cls):
+        return [{
+            "name": cls.name,
+            "type": "maximize"
+        }]
+        
+    @classmethod
+    def get_metrics(cls):
+        return [cls.name]
+
+    @classmethod
+    def get_name(cls):
+        return cls.name
+
 
 class TNRatTPX(ClassificationMetric):
     """Calculates True Negative Rate (TNR) at a specified True Positive Rate (TPR)"""
@@ -721,20 +736,36 @@ def get_evaluator(config: dict) -> MetricEvaluator:
     return MetricEvaluator(metrics)
 
 
-def get_uncertainty_evaluator(metric_config: str | dict) -> EvaluationMetric:
-    """Factory function to create evaluator from config
+def get_uncertainty_evaluator(metric_config: str | dict | list) -> MetricEvaluator:
+    """Factory function to create evaluator(s) from config
     
     Args:
-        metric_config: Either a string naming the metric or a dict with metric configuration
-            If dict, must contain 'name' key and any required parameters for that metric
+        metric_config: Configuration for metrics in one of these formats:
+            - string: naming a single metric
+            - dict: with 'name' key and any required parameters for a single metric
+            - list: of strings or dicts for multiple metrics
     
     Returns:
-        Configured evaluation metric
+        MetricEvaluator containing the requested evaluation metric(s)
     """
-    # Handle string input for backward compatibility
-    if isinstance(metric_config, str):
-        metric_config = {'name': metric_config}
+    # Handle list input for multiple evaluators
+    metrics = []
+    
+    if isinstance(metric_config, list):
+        for config in metric_config:
+            if isinstance(config, str):
+                config = {'name': config}
+            metrics.append(_create_single_evaluator(config))
+    else:
+        # Handle single metric (string or dict)
+        if isinstance(metric_config, str):
+            metric_config = {'name': metric_config}
+        metrics.append(_create_single_evaluator(metric_config))
+    
+    return MetricEvaluator(metrics)
 
+def _create_single_evaluator(metric_config: dict) -> EvaluationMetric:
+    """Helper function to create a single evaluator from config"""
     distance_metrics = {
         WassersteinEvaluation.name: WassersteinEvaluation,
         EuclideanEvaluation.name: EuclideanEvaluation,
@@ -766,6 +797,8 @@ def get_uncertainty_evaluator(metric_config: str | dict) -> EvaluationMetric:
         return BaseModelRuntimeEvaluation(**kwargs)
     elif name == 'uncertainty_estimating_runtime':
         return UncertaintyEstimatingRuntimeEvaluation()
+    elif name == 'uncertainty_estimating_throughput':
+        return UncertaintyEstimatingThroughputEvaluation.from_config(metric_config)
     elif name == 'mean_score':
         return MeanScoreEvaluation()
     elif name == 'max_score':

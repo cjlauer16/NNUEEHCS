@@ -263,8 +263,10 @@ def evaluate(model: nn.Module, id_data, ood_data, evaluator) -> dict:
         ood_ue = UncertaintyEstimate(ood_ue)
         
         # Get evaluation results
-        eval_results = evaluator.evaluate(model, (id_ipt, id_opt), 
-                                        (ood_ipt, ood_opt))
+        eval_results = list()
+        for metric in evaluator.metrics:
+            eval_results.append(metric.evaluate(model, (id_ipt, id_opt), 
+                                        (ood_ipt, ood_opt)))
         
         return {
             'id_ue': id_ue,
@@ -274,7 +276,7 @@ def evaluate(model: nn.Module, id_data, ood_data, evaluator) -> dict:
             'ood_time': ood_times,
             'id_loss': id_loss,
             'ood_loss': ood_loss,
-            'uncertainty_evaluation': eval_results
+            'metric_results': eval_results
         }
 
 def get_restart(output_dir, name, dataset, uq_method):
@@ -331,11 +333,11 @@ def main(benchmark, uq_method, config, dataset, output, restart):
         bo_config['parameter_space'] += training_cfg['parameter_space']
 
     # Get evaluator from config
-    evaluator = get_uncertainty_evaluator(bo_config['evaluation_metric'])
-    
-    # Get objectives and metrics directly from evaluator
-    objectives = evaluator.get_objectives()
-    metrics = evaluator.get_metrics()
+    evaluators = get_uncertainty_evaluator(bo_config['evaluation_metric'])
+    objectives = []
+    metrics = []
+    objectives.extend(evaluators.get_training_objectives())
+    metrics.extend(evaluators.get_all_metrics())
     
     # Prepare Bayesian optimization config
     boc = bo_config.copy()
@@ -416,30 +418,37 @@ def main(benchmark, uq_method, config, dataset, output, restart):
                                             scaling_dset=dset_id)
             dset_id = prepare_dataset_for_use(dset_id, training_cfg)
 
-            results = evaluate(model, dset_id, dset_ood, evaluator)
+            results = evaluate(model, dset_id, dset_ood, evaluators)
             print(results)
 
             id_ue = results['id_ue']
             ood_ue = results['ood_ue']
 
-            unc_result = results['uncertainty_evaluation']
+            metric_results = results['metric_results']
 
             #calculate ID/OOD ue throughput in items per second
             id_ue_throughput = dset_id.input.size(0) / np.mean(results['id_time'])
             ood_ue_throughput = dset_ood.input.size(0) / np.mean(results['ood_time'])
             ue_throughput = (dset_id.input.size(0) + dset_ood.input.size(0)) / np.mean(results['ue_time'])
             
-            trial_result = {#'ue_time': (ue_mean, ue_std),
-                            **{k: (v, 0) for k, v in unc_result.items() if k in bo_params.tracking_metric_names}
-                            }
+            trial_result = dict()
+
+            for metric, metric_result in zip(evaluators.metrics, metric_results):
+                metric_name = metric.get_name()
+                keys = list(metric_result.keys())
+                if len(keys) > 1:
+                    trial_result[metric_name] = (metric_result[keys[0]], metric_result[keys[1]])
+                else:
+                    trial_result[metric_name] = (metric_result[keys[0]], 0)
             ax_client.complete_trial(trial_index=index, raw_data=trial_result)
+            
             
             # Store all metrics in trial results for later analysis
             trial_results[index] = dict()
             trial_results[index].update(trial)
             trial_results[index]['ue_time'] = np.mean(results['ue_time'])
             trial_results[index]['learning_rate'] = lr
-            trial_results[index].update(unc_result)  # Store all metrick
+            trial_results[index].update({k: v[0] for k, v in trial_result.items()})
             trial_results[index]['id_ue'] = id_ue.mean()
             trial_results[index]['ood_ue'] = ood_ue.mean()
             trial_results[index]['id_loss'] = results['id_loss']
@@ -483,10 +492,11 @@ def main(benchmark, uq_method, config, dataset, output, restart):
         opt_manager.save_trial_results_dict(trial_results)
         opt_manager.save_optimization_state(index, ax_client)
 
-    # pareto_results = ax_client.get_pareto_optimal_parameters(use_model_predictions=False)
-    # pareto_predictions = ax_client.get_pareto_optimal_parameters(use_model_predictions=True)
-    # pareto = {'results': pareto_results, 'predictions': pareto_predictions}
-    # opt_manager.save_pareto_parameters(json.dumps(pareto))
+    if len(bo_params.tracking_metric_names) > 1:
+        pareto_results = ax_client.get_pareto_optimal_parameters(use_model_predictions=False)
+        pareto_predictions = ax_client.get_pareto_optimal_parameters(use_model_predictions=True)
+        pareto = {'results': pareto_results, 'predictions': pareto_predictions}
+        opt_manager.save_pareto_parameters(json.dumps(pareto))
 
 if __name__ == '__main__':
     main()
