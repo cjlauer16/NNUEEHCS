@@ -7,6 +7,7 @@ import sys
 import click
 import pandas as pd
 import torch
+import numpy as np
 
 def get_evaluators(metrics: list[dict]):
     evaluators = []
@@ -144,6 +145,71 @@ def find_all_training_runs(results_instance: ResultsInstance) -> list[pd.Series]
     res = pd.read_csv(results_instance.get_trial_results_file())
     return [row for _, row in res.iterrows()]
 
+def is_pareto_efficient(costs):
+    """
+    Find the Pareto-efficient points.
+    
+    Args:
+        costs: An (n_points, n_costs) array
+    
+    Returns:
+        A boolean array of the same length as costs indicating whether each point is Pareto efficient
+    """
+    is_efficient = np.ones(costs.shape[0], dtype=bool)
+    for i, c in enumerate(costs):
+        if is_efficient[i]:
+            # Keep any point with a lower cost in at least one dimension
+            # Remove any point with a higher cost in all dimensions
+            is_efficient[is_efficient] = np.any(costs[is_efficient] < c, axis=1) | np.all(costs[is_efficient] == c, axis=1)
+    return is_efficient
+
+def find_pareto_optimal_runs(results_instance: ResultsInstance, train_eval_metrics) -> list[pd.Series]:
+    """
+    Find all Pareto-optimal training runs based on the training metrics.
+    
+    Args:
+        results_instance: ResultsInstance object containing the results
+        train_eval_metrics: The metrics used during training
+    
+    Returns:
+        list of pandas Series containing the Pareto-optimal runs
+    """
+    res = pd.read_csv(results_instance.get_trial_results_file())
+    
+    # Handle single metric case
+    if len(train_eval_metrics) == 1:
+        train_metric = train_eval_metrics[0]
+        train_metric_name = train_metric.get_metrics()[0]
+        if train_metric.get_objectives()[0]['type'] == 'maximize':
+            max_train_metric_value = res[train_metric_name].max()
+            return [row for _, row in res[res[train_metric_name] == max_train_metric_value].iterrows()]
+        else:
+            min_train_metric_value = res[train_metric_name].min()
+            return [row for _, row in res[res[train_metric_name] == min_train_metric_value].iterrows()]
+    
+    # Handle multi-objective case - find all Pareto-optimal solutions
+    metric_names = []
+    metric_directions = []
+    
+    for metric in train_eval_metrics:
+        metric_names.append(metric.get_metrics()[0])
+        # 1 for maximize, -1 for minimize
+        metric_directions.append(1 if metric.get_objectives()[0]['type'] == 'maximize' else -1)
+    
+    # Prepare costs array for Pareto calculation
+    # For maximization objectives, we negate the values to convert to minimization
+    costs = np.zeros((len(res), len(metric_names)))
+    for i, metric_name in enumerate(metric_names):
+        # Multiply by -1 for maximization objectives to convert to minimization problem
+        costs[:, i] = res[metric_name].values * -metric_directions[i]
+    
+    # Find Pareto-optimal points
+    pareto_mask = is_pareto_efficient(costs)
+    pareto_runs = [row for i, (_, row) in enumerate(res.iterrows()) if pareto_mask[i]]
+    
+    print(f"Found {len(pareto_runs)} Pareto-optimal runs out of {len(res)} total runs")
+    return pareto_runs
+
 def process_benchmark_dataset(composite, config, benchmark, dataset, evaluators, evaluate_all: bool = False):
     """Process a single benchmark-dataset pair and return evaluation results."""
     print(f"\nProcessing benchmark {benchmark}, dataset {dataset}")
@@ -151,8 +217,8 @@ def process_benchmark_dataset(composite, config, benchmark, dataset, evaluators,
     # Get configurations
     dataset_cfg = config['benchmarks'][benchmark]['datasets']
     training_cfg = config['training']
-    train_eval_metric = get_evaluator(config['bo_config']['evaluation_metric']).metrics[0]
-    print(f"Using training evaluation metric: {train_eval_metric.get_name()}")
+    train_eval_metrics = [metric.metrics[0] for metric in get_evaluators(config['bo_config']['evaluation_metric'])]
+    print(f"Using training evaluation metrics: {[metric.get_name() for metric in train_eval_metrics]}")
 
     dataset_id, dataset_ood = prepare_datasets(dataset_cfg, dataset, training_cfg)
     
@@ -167,8 +233,8 @@ def process_benchmark_dataset(composite, config, benchmark, dataset, evaluators,
         if evaluate_all:
             runs = find_all_training_runs(results_instance)
         else:
-            _, best_run = find_best_training_run(results_instance, train_eval_metric)
-            runs = [best_run]
+            # Get Pareto-optimal runs instead of just the best run
+            runs = find_pareto_optimal_runs(results_instance, train_eval_metrics)
             
         for run in runs:
             trial = Path(run['log_path']).stem
