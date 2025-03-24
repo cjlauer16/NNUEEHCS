@@ -289,6 +289,97 @@ class JensenShannonEvaluation(UncertaintyEvaluationMetric):
     def get_name(self):
         return self.name
 
+class MeanScoreEvaluation(UncertaintyEvaluationMetric):
+    """Evaluates the mean uncertainty score of the model.
+       This is intended to be used as a minimization target for Bayesian Optimization.
+       We want to parameterize the UE technique such that UE scores of ID data are minimized.
+       This, hopefully, gives good downstream metrics without required OOD data at training time.
+    """
+    name = "mean_score"
+
+    def _evaluate_uncertainties(self, id_ue: UncertaintyEstimate, ood_ue: UncertaintyEstimate) -> dict:
+        if id_ue.dimensions != ood_ue.dimensions:
+            raise ValueError("Uncertainty estimates must have the same dimensions")
+        result = np.mean(id_ue.data)
+        return {self.name: result}
+    
+    @classmethod
+    def get_objectives(cls):
+        return [{
+            "name": cls.name,
+            "type": "minimize"
+        }]
+    
+    @classmethod
+    def get_metrics(cls):
+        return [cls.name]
+    
+    def get_name(self):
+        return self.name
+
+class MaxScoreEvaluation(UncertaintyEvaluationMetric):
+    name = "max_score"
+
+    def _evaluate_uncertainties(self, id_ue: UncertaintyEstimate, ood_ue: UncertaintyEstimate) -> dict:
+        result = np.max(id_ue.data)
+        return {self.name: result}
+
+    @classmethod
+    def get_objectives(cls):
+        return [{
+            "name": cls.name,
+            "type": "maximize"
+        }]
+    
+    @classmethod
+    def get_metrics(cls):
+        return [cls.name]
+    
+    def get_name(self):
+        return self.name
+
+class PercentileScoreEvaluation(UncertaintyEvaluationMetric):
+    """Evaluates a specific percentile of uncertainty scores.
+       This allows for evaluating different thresholds (e.g., 90th, 95th percentile)
+       without using the maximum score, which might be sensitive to outliers.
+    """
+    name = "percentile_score"
+    
+    def __init__(self, percentile: float = 95.0):
+        """
+        Args:
+            percentile: The percentile to evaluate (between 0 and 100)
+        """
+        if not 0 <= percentile <= 100:
+            raise ValueError(f"percentile must be between 0 and 100, got {percentile}")
+        self.percentile = percentile
+    
+    @classmethod
+    def from_config(cls, config: dict) -> 'PercentileScoreEvaluation':
+        """Factory method to create from config dictionary"""
+        print(config)
+        return cls(percentile=config.get('percentile', 95.0))
+
+    def _evaluate_uncertainties(self, id_ue: UncertaintyEstimate, ood_ue: UncertaintyEstimate) -> dict:
+        if id_ue.dimensions != ood_ue.dimensions:
+            raise ValueError("Uncertainty estimates must have the same dimensions")
+        result = np.percentile(id_ue.data, self.percentile)
+        return {self.name: result}
+    
+    @classmethod
+    def get_objectives(cls):
+        return [{
+            "name": cls.name,
+            "type": "minimize"
+        }]
+    
+    @classmethod
+    def get_metrics(cls):
+        return [cls.name]
+    
+    def get_name(self):
+        return self.name
+
 class MaxMemoryUsageEvaluation(EvaluationMetric):
     name = "max_memory_usage"
 
@@ -611,6 +702,12 @@ def get_evaluator(config: dict) -> MetricEvaluator:
             metrics.append(BaseModelRuntimeEvaluation.from_config(metric_config))
         elif metric_type == 'uncertainty_estimating_runtime':
             metrics.append(UncertaintyEstimatingRuntimeEvaluation.from_config(metric_config))
+        elif metric_type == 'mean_score':
+            metrics.append(MeanScoreEvaluation())
+        elif metric_type == 'max_score':
+            metrics.append(MaxScoreEvaluation())
+        elif metric_type == 'percentile_score':
+            metrics.append(PercentileScoreEvaluation.from_config(metric_config))
         elif metric_type == 'base_model_throughput':
             metrics.append(BaseModelThroughputEvaluation.from_config(metric_config))
         elif metric_type == 'uncertainty_estimating_throughput':
@@ -671,6 +768,10 @@ def get_uncertainty_evaluator(metric_config: str | dict) -> EvaluationMetric:
         return UncertaintyEstimatingRuntimeEvaluation()
     elif name == 'mean_score':
         return MeanScoreEvaluation()
+    elif name == 'max_score':
+        return MaxScoreEvaluation()
+    elif name == 'percentile_score':
+        return PercentileScoreEvaluation.from_config(metric_config)
     elif name == 'auroc':
         return AUROC()
     else:
