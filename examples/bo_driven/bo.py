@@ -375,7 +375,9 @@ def main(benchmark, uq_method, config, dataset, output, restart):
                                   tracking_metric_names=bo_params.tracking_metric_names,
                                   outcome_constraints=bo_params.parameter_constraints
                                  )
-    for bo_trial in range(bo_idx, bo_config['trials']):
+    successful_trials = 0
+    failed_trials = 0
+    for bo_trial in range(bo_idx, bo_config['trials'] + bo_config['max_failures']):
         trial, index = ax_client.get_next_trial()
         lr = trial['learning_rate']
         bs = trial['batch_size']
@@ -418,79 +420,88 @@ def main(benchmark, uq_method, config, dataset, output, restart):
                                             scaling_dset=dset_id)
             dset_id = prepare_dataset_for_use(dset_id, training_cfg)
 
-            results = evaluate(model, dset_id, dset_ood, evaluators)
-            print(results)
+            try:
+                results = evaluate(model, dset_id, dset_ood, evaluators)
+                print(results)
+                
+                id_ue = results['id_ue']
+                ood_ue = results['ood_ue']
+                metric_results = results['metric_results']
 
-            id_ue = results['id_ue']
-            ood_ue = results['ood_ue']
+                #calculate ID/OOD ue throughput in items per second
+                id_ue_throughput = dset_id.input.size(0) / np.mean(results['id_time'])
+                ood_ue_throughput = dset_ood.input.size(0) / np.mean(results['ood_time'])
+                ue_throughput = (dset_id.input.size(0) + dset_ood.input.size(0)) / np.mean(results['ue_time'])
+                
+                trial_result = dict()
 
-            metric_results = results['metric_results']
-
-            #calculate ID/OOD ue throughput in items per second
-            id_ue_throughput = dset_id.input.size(0) / np.mean(results['id_time'])
-            ood_ue_throughput = dset_ood.input.size(0) / np.mean(results['ood_time'])
-            ue_throughput = (dset_id.input.size(0) + dset_ood.input.size(0)) / np.mean(results['ue_time'])
-            
-            trial_result = dict()
-
-            for metric, metric_result in zip(evaluators.metrics, metric_results):
-                metric_name = metric.get_name()
-                keys = list(metric_result.keys())
-                if len(keys) > 1:
-                    trial_result[metric_name] = (metric_result[keys[0]], metric_result[keys[1]])
-                else:
-                    trial_result[metric_name] = (metric_result[keys[0]], 0)
-            ax_client.complete_trial(trial_index=index, raw_data=trial_result)
-            
-            
-            # Store all metrics in trial results for later analysis
-            trial_results[index] = dict()
-            trial_results[index].update(trial)
-            trial_results[index]['ue_time'] = np.mean(results['ue_time'])
-            trial_results[index]['learning_rate'] = lr
-            trial_results[index].update({k: v[0] for k, v in trial_result.items()})
-            trial_results[index]['id_ue'] = id_ue.mean()
-            trial_results[index]['ood_ue'] = ood_ue.mean()
-            trial_results[index]['id_loss'] = results['id_loss']
-            trial_results[index]['ood_loss'] = results['ood_loss']
-            trial_results[index]['id_time'] = np.mean(results['id_time'])
-            trial_results[index]['ood_time'] = np.mean(results['ood_time'])
-            trial_results[index]['ue_throughput'] = ue_throughput
-            trial_results[index]['id_ue_throughput'] = id_ue_throughput
-            trial_results[index]['ood_ue_throughput'] = ood_ue_throughput
-            trial_results[index]['train_time'] = training_time
-            trial_results[index]['log_path'] = f'{trainer.logger.log_dir}'
-            print(trial_results)
-            fig, ax = plt.subplots()
-            if isinstance(id_ue.data, tuple):
-                firstdata_id = id_ue.data[0]
-                firstdata_ood = ood_ue.data[0]
-
-                seconddata_id = id_ue.data[1]
-                seconddata_ood = ood_ue.data[1]
-            else:
-                firstdata_id = id_ue.data
-                firstdata_ood = ood_ue.data
-
-                seconddata_id = id_ue.data
-                seconddata_ood = ood_ue.data
-
-            ax.ecdf(firstdata_id.flatten(), label='ID')
-            ax.ecdf(firstdata_ood.flatten(), label='OOD')
-            ax.legend()
-            # save it to png file
-            plt.savefig(f'{trainer.logger.log_dir}/uncertainty.png')
-            plt.clf()
-            fig, ax = plt.subplots()
-
-            ax.ecdf(seconddata_id.flatten(), label='ID')
-            ax.ecdf(seconddata_ood.flatten(), label='OOD')
-            ax.legend()
-            # save it to png file
-            plt.savefig(f'{trainer.logger.log_dir}/uncertainty_1.png')
+                for metric, metric_result in zip(evaluators.metrics, metric_results):
+                    metric_name = metric.get_name()
+                    keys = list(metric_result.keys())
+                    if len(keys) > 1:
+                        trial_result[metric_name] = (metric_result[keys[0]], metric_result[keys[1]])
+                    else:
+                        trial_result[metric_name] = (metric_result[keys[0]], 0)
+                ax_client.complete_trial(trial_index=index, raw_data=trial_result)
+                
+                # Store all metrics in trial results for later analysis
+                trial_results[index] = dict()
+                trial_results[index].update(trial)
+                trial_results[index]['learning_rate'] = lr
+                trial_results[index]['batch_size'] = bs
+                trial_results[index]['weight_decay'] = wd
+                trial_results[index]['ue_time'] = np.mean(results['ue_time'])
+                trial_results[index].update({k: v[0] for k, v in trial_result.items()})
+                trial_results[index]['id_ue'] = id_ue.mean()
+                trial_results[index]['ood_ue'] = ood_ue.mean()
+                trial_results[index]['id_loss'] = results['id_loss']
+                trial_results[index]['ood_loss'] = results['ood_loss']
+                trial_results[index]['id_time'] = np.mean(results['id_time'])
+                trial_results[index]['ood_time'] = np.mean(results['ood_time'])
+                trial_results[index]['ue_throughput'] = ue_throughput
+                trial_results[index]['id_ue_throughput'] = id_ue_throughput
+                trial_results[index]['ood_ue_throughput'] = ood_ue_throughput
+                trial_results[index]['train_time'] = training_time
+                trial_results[index]['log_path'] = f'{trainer.logger.log_dir}'
+                trial_results[index]['failed'] = False
+                trial_results[index]['error_message'] = ""
+                successful_trials += 1
+            except RuntimeError as e:
+                print(f"RuntimeError: {e}")
+                # Mark the trial as failed but maintain consistent columns
+                trial_results[index] = dict()
+                trial_results[index].update(trial)
+                trial_results[index]['learning_rate'] = lr
+                trial_results[index]['batch_size'] = bs
+                trial_results[index]['weight_decay'] = wd
+                trial_results[index]['train_time'] = training_time
+                trial_results[index]['log_path'] = f'{trainer.logger.log_dir}'
+                
+                for metric in evaluators.metrics:
+                    trial_results[index][metric.get_name()] = float('nan')
+                
+                trial_results[index]['ue_time'] = float('nan')
+                trial_results[index]['id_ue'] = float('nan')
+                trial_results[index]['ood_ue'] = float('nan')
+                trial_results[index]['id_loss'] = float('nan')
+                trial_results[index]['ood_loss'] = float('nan')
+                trial_results[index]['id_time'] = float('nan')
+                trial_results[index]['ood_time'] = float('nan')
+                trial_results[index]['ue_throughput'] = float('nan')
+                trial_results[index]['id_ue_throughput'] = float('nan')
+                trial_results[index]['ood_ue_throughput'] = float('nan')
+                
+                trial_results[index]['failed'] = True
+                trial_results[index]['error_message'] = str(e)
+                failed_trials += 1
+                ax_client.log_trial_failure(trial_index=index)
+                
 
         opt_manager.save_trial_results_dict(trial_results)
         opt_manager.save_optimization_state(index, ax_client)
+
+        if successful_trials == bo_config['trials']:
+            break
 
     if len(bo_params.tracking_metric_names) > 1:
         pareto_results = ax_client.get_pareto_optimal_parameters(use_model_predictions=False)
