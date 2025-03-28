@@ -174,10 +174,14 @@ class DeltaUQMLPModelBuilder(ModelBuilder):
     def update_info(self, info):
 
         estimator = self.duq_descr['estimator']
+        batch_size = self.duq_descr['anchored_batch_size']
 
         def get_estimator(self):
             return estimator
+        def get_batch_size(self):
+            return batch_size
         info.get_estimator = types.MethodType(get_estimator, info)
+        info.get_batch_size = types.MethodType(get_batch_size, info)
         if self._updated:
             return
         self._updated = True

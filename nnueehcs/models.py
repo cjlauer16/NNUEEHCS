@@ -286,7 +286,7 @@ class KNNKDEMLPModel(MLPModel):
 
 
 class DeltaUQMLP(deltaUQ_MLP, WrappedModelBase):
-    def __init__(self, base_model, estimator='std', num_anchors=5, **kwargs):
+    def __init__(self, base_model, estimator='std', num_anchors=5, anchored_batch_size=None, **kwargs):
         deltaUQ_MLP.__init__(self, base_model, estimator)
         # somehow, the constructor of WrappedModelBase
         # removes our 'net' member. We need to re-add it
@@ -295,6 +295,11 @@ class DeltaUQMLP(deltaUQ_MLP, WrappedModelBase):
         WrappedModelBase.__init__(self, **kwargs)
         self.net = net
         self.num_anchors = num_anchors
+        if anchored_batch_size is None:
+            import sys
+            self.batch_size = sys.maxsize
+        else:
+            self.batch_size = anchored_batch_size
         # Initialize anchors as None to prevent errors
         self.register_buffer('_anchors', None)
 
@@ -306,14 +311,34 @@ class DeltaUQMLP(deltaUQ_MLP, WrappedModelBase):
         return loss
 
     def forward(self, x, return_ue=False):
+        batch_size = self.batch_size
+        
         if self.training:
-            return deltaUQ_MLP.forward(self, x)
+            forward_pass_fn = lambda inputs: deltaUQ_MLP.forward(self, inputs)
         else:
             if not hasattr(self, 'anchors') or self._anchors is None:
                 if return_ue:
                     print("WARNING: Returning UE without anchors")
-                return deltaUQ_MLP.forward(self, x)
-            return deltaUQ_MLP.forward(self, x, anchors=self.anchors, n_anchors=self.num_anchors, return_std=return_ue)
+                forward_pass_fn = lambda inputs: deltaUQ_MLP.forward(self, inputs)
+            else:
+                forward_pass_fn = lambda inputs: deltaUQ_MLP.forward(
+                    self, inputs, anchors=self.anchors, n_anchors=self.num_anchors, return_std=return_ue
+                )
+        
+        # not even a full batch
+        if len(x) <= batch_size:
+            return forward_pass_fn(x)
+
+        outputs = []
+        for i in range(0, len(x), batch_size):
+            batch = x[i:i+batch_size]
+            batch_output = forward_pass_fn(batch)
+            outputs.append(batch_output)
+        
+        if isinstance(outputs[0], tuple):
+            return tuple(torch.cat([o[i] for o in outputs], dim=0) for i in range(len(outputs[0])))
+        else:
+            return torch.cat(outputs, dim=0)
 
     @property
     def anchors(self):
@@ -349,8 +374,8 @@ class DeltaUQMLP(deltaUQ_MLP, WrappedModelBase):
 
 
 class PAGERMLP(DeltaUQMLP, WrappedModelBase):
-    def __init__(self, base_model, estimator='std', num_anchors=5, vectorize=False, **kwargs):
-        DeltaUQMLP.__init__(self, base_model, estimator)
+    def __init__(self, base_model, estimator='std', anchored_batch_size=None, num_anchors=5, vectorize=False, **kwargs):
+        DeltaUQMLP.__init__(self, base_model, estimator, anchored_batch_size)
         # somehow, the constructor of WrappedModelBase
         # removes our 'net' member. We need to re-add it
         # after the initialization
