@@ -1,7 +1,7 @@
 ---
 trainer:
   accelerator: gpu
-  max_epochs: 300
+  max_epochs: 3
   limit_train_batches: 1000
   limit_val_batches: 100
   log_every_n_steps: 5
@@ -33,9 +33,11 @@ training:
       # bounds:
         # - 16
         # - 128
-    
+
+
   validation_split: 0.2
-  scaling: true
+  scaling: false
+
 
 benchmarks:
   # binomial_options:
@@ -83,34 +85,34 @@ benchmarks:
   #     datasets:
   #       tails_id:
   #         format: hdf5
-  #         path: '/scratch/mzu/zanef2/surrogates/training_data/binomial_options_16777216.h5'
+  #         path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_65536_train.h5'
   #         group_name: BinomialOptionsKernel
   #         input_dataset: input
   #         output_dataset: output
   #         percentiles: '[0, 70]'
   #       tails_ood:
   #         format: hdf5
-  #         path: '/scratch/mzu/zanef2/surrogates/training_data/binomial_options_16777216.h5'
+  #         path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_65536_train.h5'
   #         group_name: BinomialOptionsKernel
   #         input_dataset: input
   #         output_dataset: output
   #         percentiles: '[70, 100]'
   #       gaps_id:
   #         format: hdf5
-  #         path: '/scratch/mzu/zanef2/surrogates/training_data/binomial_options_16777216.h5'
+  #         path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_65536_train.h5'
   #         group_name: BinomialOptionsKernel
   #         input_dataset: input
   #         output_dataset: output
   #         percentiles: '[0, 30], [60, 100]'
   #       gaps_ood:
   #         format: hdf5
-  #         path: '/scratch/mzu/zanef2/surrogates/training_data/binomial_options_16777216.h5'
+  #         path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_65536_train.h5'
   #         group_name: BinomialOptionsKernel
   #         input_dataset: input
   #         output_dataset: output
   #         percentiles: '[30, 60]'
 
-  minibude:
+   minibude:
       model:
         architecture:
           - Linear:
@@ -303,11 +305,13 @@ benchmarks:
         delimiter: '\s+'
         path: /scratch/mzu/zanef2/surrogates/training_data/airfoil_self_noise.dat
         percentiles: '[0, 30], [60, 100]'
+        dtype: float32
       gaps_ood:
         format: character_delimited
         delimiter: '\s+'
         path: /scratch/mzu/zanef2/surrogates/training_data/airfoil_self_noise.dat
         percentiles: '[30, 60]'
+        dtype: float32
 
 
   puma:
@@ -374,58 +378,34 @@ benchmarks:
         path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/pumadyn-8fm/Dataset.data
         percentiles: '[30, 60]'
 
+
+
 uq_methods:
-  ensemble:
-    parameter_space:
-      - name: num_models
-        type: range
-        bounds:
-          - 2
-          - 32
-  delta_uq:
-    parameter_space:
-      - name: num_anchors
-        type: range
-        bounds:
-          - 5
-          - 500
-      - name: anchored_batch_size
-        type: range
-        bounds:
-          - 64
-          - 131072
-        log_scale: true
-      - name: estimator
-        type: fixed
-        value: 'std'
-  pager:
-    parameter_space:
-      - name: num_anchors
-        type: range
-        bounds:
-          - 5
-          - 300
-      - name: anchored_batch_size
-        type: range
-        bounds:
-          - 64
-          - 131072
-        log_scale: true
-      - name: estimator
-        type: fixed
-        value: 'std'
-  mc_dropout:
-    parameter_space:
-      - name: num_samples
-        type: range
-        bounds:
-          - 5
-          - 32
-      - name: dropout_percent
-        type: range
-        bounds: 
-          - 0.05
-          - 0.3
+    kde:
+      parameter_space:
+        - name: bandwidth
+          type: choice
+          values:
+            - 'scott'
+            - 'silverman'
+        - name: rtol
+          type: range
+          # for some reason, ax doesn't suggest very diverse values when
+          # we give a range like 0.05, 0.5.
+          # We'll do this instead and convert in the impl.
+          bounds:
+            - 500
+            - 50000
+    knn_kde:
+      parameter_space:
+        - name: k
+          type: range
+          bounds:
+            - 1
+            - 800
+        - name: bandwidth
+          type: fixed
+          value: 'scott'
 
 bo_config:
   trials: 50
@@ -437,16 +417,15 @@ bo_config:
 
 evaluation:
   metrics:
-    - name: auroc
     - name: tnr_at_tpr
       target_tpr: 0.95
-      reversed: true
+      reversed: false
     - name: percentile_classification
-      threshold: 0.8
-      reversed: true
-    - name: percentile_classification
-      threshold: 0.8
+      threshold: 0.90
       reversed: false
     - name: runtime
     - name: uncertainty_estimating_runtime
-
+    - name: base_model_throughput
+    - name: auroc
+    - name: uncertainty_estimating_throughput
+    - name: max_memory_usage
