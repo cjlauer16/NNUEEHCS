@@ -210,7 +210,7 @@ def find_pareto_optimal_runs(results_instance: ResultsInstance, train_eval_metri
     print(f"Found {len(pareto_runs)} Pareto-optimal runs out of {len(res)} total runs")
     return pareto_runs
 
-def process_benchmark_dataset(composite, config, benchmark, dataset, evaluators, evaluate_all: bool = False):
+def process_benchmark_dataset(composite, config, benchmark, dataset, evaluators, method: str = None, evaluate_all: bool = False):
     """Process a single benchmark-dataset pair and return evaluation results."""
     print(f"\nProcessing benchmark {benchmark}, dataset {dataset}")
     
@@ -223,11 +223,16 @@ def process_benchmark_dataset(composite, config, benchmark, dataset, evaluators,
     dataset_id, dataset_ood = prepare_datasets(dataset_cfg, dataset, training_cfg)
     
     results = []
-    methods = list(composite.get_method_names(benchmark, dataset))
-    for method in methods:
-        print(f"\nEvaluating method: {method}")
+    all_methods = list(composite.get_method_names(benchmark, dataset))
+    methods = [method] if method and method in all_methods else all_methods
+    
+    if method and method not in all_methods:
+        print(f"Warning: Method '{method}' not found for {benchmark}/{dataset}. Available methods: {all_methods}")
+    
+    for current_method in methods:
+        print(f"\nEvaluating method: {current_method}")
         
-        results_instance = get_latest_finished_trial(composite, benchmark, dataset, method)
+        results_instance = get_latest_finished_trial(composite, benchmark, dataset, current_method)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         if evaluate_all:
@@ -241,7 +246,7 @@ def process_benchmark_dataset(composite, config, benchmark, dataset, evaluators,
             print(f"Evaluating trial: {trial}")
             
             # Get model for this trial
-            trial_instance = composite.get_results_instance(benchmark, dataset, method, trial)
+            trial_instance = composite.get_results_instance(benchmark, dataset, current_method, trial)
             model = torch.load(trial_instance.get_model_file(), map_location=device)
             model = model.to(dataset_id.input.dtype)
             model.eval()
@@ -249,7 +254,7 @@ def process_benchmark_dataset(composite, config, benchmark, dataset, evaluators,
             metric_results = evaluate_model_metrics(model, dataset_id, dataset_ood, evaluators)
             
             for metric_name, objective_name, value in metric_results:
-                results.append([benchmark, dataset, method, trial, metric_name, objective_name, value])
+                results.append([benchmark, dataset, current_method, trial, metric_name, objective_name, value])
     
     return results
 
@@ -258,9 +263,10 @@ def process_benchmark_dataset(composite, config, benchmark, dataset, evaluators,
 @click.option("--config_file", type=click.Path(exists=True), help="The config file containing the metrics to evaluate")
 @click.option("--benchmark", type=str, help="The benchmark to evaluate (optional)", required=False)
 @click.option("--dataset", type=str, help="The dataset to evaluate (optional)", required=False)
+@click.option("--method", type=str, help="The UE method to evaluate (optional)", required=False)
 @click.option("--output", type=str, help="The output file name", default="evaluated_metrics.csv")
 @click.option("--evaluate_all", is_flag=True, help="Evaluate all models instead of just the best one")
-def evaluate_metrics(results_dir: str, config_file: str, benchmark: str, dataset: str, output: str, evaluate_all: bool):
+def evaluate_metrics(results_dir: str, config_file: str, benchmark: str, dataset: str, method: str, output: str, evaluate_all: bool):
     composite = ResultsComposite(results_dir)
     config = yaml.load(open(config_file), Loader=yaml.FullLoader)
     
@@ -281,7 +287,7 @@ def evaluate_metrics(results_dir: str, config_file: str, benchmark: str, dataset
     
     # Process each benchmark-dataset pair
     for current_benchmark, current_dataset in pairs_to_evaluate:
-        results = process_benchmark_dataset(composite, config, current_benchmark, current_dataset, evaluators, evaluate_all)
+        results = process_benchmark_dataset(composite, config, current_benchmark, current_dataset, evaluators, method, evaluate_all)
         rows.extend(results)
     
     # Save results
