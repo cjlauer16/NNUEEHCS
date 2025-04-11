@@ -157,28 +157,28 @@ benchmarks:
      datasets:
        tails_id:
          format: hdf5
-         path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_65536_train.h5'
+         path: /projects/mzu/training_data/bude_bm2long_65536_train.h5
          group_name: BUDEKernel
          input_dataset: input
          output_dataset: output
          percentiles: '[0, 70]'
        tails_ood:
          format: hdf5
-         path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_65536_train.h5'
+         path: /projects/mzu/training_data/bude_bm2long_65536_train.h5
          group_name: BUDEKernel
          input_dataset: input
          output_dataset: output
          percentiles: '[70, 100]'
        gaps_id:
          format: hdf5
-         path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_65536_train.h5'
+         path: /projects/mzu/training_data/bude_bm2long_65536_train.h5
          group_name: BUDEKernel
          input_dataset: input
          output_dataset: output
          percentiles: '[0, 30], [60, 100]'
        gaps_ood:
          format: hdf5
-         path: '/scratch/mzu/zanef2/surrogates/training_data/bude_bm2long_65536_train.h5'
+         path: /projects/mzu/training_data/bude_bm2long_65536_train.h5
          group_name: BUDEKernel
          input_dataset: input
          output_dataset: output
@@ -230,20 +230,20 @@ benchmarks:
     datasets:
       tails_id:
         format: arff
-        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/ailerons.arff
+        path: /projects/mzu/training_data/ailerons.arff
         percentiles: '[0, 70]'
       tails_ood:
         format: arff
-        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/ailerons.arff
+        path: /projects/mzu/training_data/ailerons.arff
         percentiles: '[70, 100]'
 
       gaps_id:
         format: arff
-        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/ailerons.arff
+        path: /projects/mzu/training_data/ailerons.arff
         percentiles: '[0, 30], [60, 100]'
       gaps_ood:
         format: arff
-        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/ailerons.arff
+        path: /projects/mzu/training_data/ailerons.arff
         percentiles: '[30, 60]'
 
 
@@ -293,23 +293,23 @@ benchmarks:
       tails_id:
         format: character_delimited
         delimiter: '\s+'
-        path: /scratch/mzu/zanef2/surrogates/training_data/airfoil_self_noise.dat
+        path: /projects/mzu/training_data/airfoil_self_noise.dat
         percentiles: '[0, 70]'
       tails_ood:
         format: character_delimited
         delimiter: '\s+'
-        path: /scratch/mzu/zanef2/surrogates/training_data/airfoil_self_noise.dat
+        path: /projects/mzu/training_data/airfoil_self_noise.dat
         percentiles: '[70, 100]'
       gaps_id:
         format: character_delimited
         delimiter: '\s+'
-        path: /scratch/mzu/zanef2/surrogates/training_data/airfoil_self_noise.dat
+        path: /projects/mzu/training_data/airfoil_self_noise.dat
         percentiles: '[0, 30], [60, 100]'
         dtype: float32
       gaps_ood:
         format: character_delimited
         delimiter: '\s+'
-        path: /scratch/mzu/zanef2/surrogates/training_data/airfoil_self_noise.dat
+        path: /projects/mzu/training_data/airfoil_self_noise.dat
         percentiles: '[30, 60]'
         dtype: float32
 
@@ -360,22 +360,22 @@ benchmarks:
       tails_id:
         format: character_delimited
         delimiter: '\s+'
-        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/pumadyn-8fm/Dataset.data
+        path: /projects/mzu/training_data/pumadyn-8fm/Dataset.data
         percentiles: '[0, 70]'
       tails_ood:
         format: character_delimited
         delimiter: '\s+'
-        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/pumadyn-8fm/Dataset.data
+        path: /projects/mzu/training_data/pumadyn-8fm/Dataset.data
         percentiles: '[70, 100]'
       gaps_id:
         format: character_delimited
         delimiter: '\s+'
-        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/pumadyn-8fm/Dataset.data
+        path: /projects/mzu/training_data/pumadyn-8fm/Dataset.data
         percentiles: '[0, 30], [60, 100]'
       gaps_ood:
         format: character_delimited
         delimiter: '\s+'
-        path: /scratch/mzu/zanef2/surrogates/SurrogateResults/2024-08-09_kde_new_datasets/pumadyn-8fm/Dataset.data
+        path: /projects/mzu/training_data/pumadyn-8fm/Dataset.data
         percentiles: '[30, 60]'
 
 
