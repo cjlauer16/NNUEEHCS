@@ -437,16 +437,24 @@ bo_config:
 
 evaluation:
   metrics:
-    - name: auroc
     - name: tnr_at_tpr
       target_tpr: 0.95
+      reversed: false
+    - name: percentile_classification
+      threshold: 0.90
+      reversed: false
+    - name: percentile_classification
+      threshold: 0.90
       reversed: true
     - name: percentile_classification
-      threshold: 0.8
+      threshold: 0.80
       reversed: true
     - name: percentile_classification
-      threshold: 0.8
+      threshold: 0.80
       reversed: false
     - name: runtime
     - name: uncertainty_estimating_runtime
-
+    - name: base_model_throughput
+    - name: auroc
+    - name: uncertainty_estimating_throughput
+    - name: max_memory_usage

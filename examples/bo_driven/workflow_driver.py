@@ -61,7 +61,7 @@ def main(config, output, parsl_rundir):
     )
 
     slurm_provider = SlurmProvider(
-        partition="gpuA40x4",
+        partition="gpuA40x4-preempt",
         account="mzu-delta-gpu",
         scheduler_options="#SBATCH --gpus-per-task=1 --cpus-per-gpu=16 --nodes=1 --ntasks-per-node=1 --nodes=1",
         worker_init='source ~/activate.sh',
