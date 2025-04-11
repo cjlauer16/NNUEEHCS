@@ -54,25 +54,33 @@ def run_bo(config, benchmark, uq_method, dataset, output,
 def main(config, output, parsl_rundir):
 
     config_filename = config
+    # Load config first to get Slurm settings
+    config_data = get_config(config_filename)
+    slurm_settings = config_data.get('bo_slurm_config', {}) # Get BO slurm config
+
     local_provider = LocalProvider(
         init_blocks=1,
         max_blocks=1,
         parallelism=1
     )
 
+    # Construct scheduler options string dynamically and add to settings
+    gpus_per_task = slurm_settings.pop('gpus_per_task', 1) # Remove key after getting value
+    cpus_per_gpu = slurm_settings.pop('cpus_per_gpu', 16)
+    nodes = slurm_settings.pop('nodes', 1)
+    ntasks_per_node = slurm_settings.pop('ntasks_per_node', 1)
+    scheduler_opts = (
+        f"--gpus-per-task={gpus_per_task} "
+        f"--cpus-per-gpu={cpus_per_gpu} "
+        f"--nodes={nodes} "
+        f"--ntasks-per-node={ntasks_per_node}"
+    )
+    slurm_settings['scheduler_options'] = f"#SBATCH {scheduler_opts}"
+
     slurm_provider = SlurmProvider(
-        partition="gpuA40x4-preempt",
-        account="mzu-delta-gpu",
-        scheduler_options="#SBATCH --gpus-per-task=1 --cpus-per-gpu=16 --nodes=1 --ntasks-per-node=1 --nodes=1",
-        worker_init='source ~/activate.sh',
-        nodes_per_block=1,
-        max_blocks=3,
-        init_blocks=1,
-        parallelism=1,
-        exclusive=False,
-        mem_per_node=64,
-        walltime="1:55:00",
-        cmd_timeout=120,
+        # Unpack settings from the config file
+        **slurm_settings,
+        # Ensure launcher is always set, potentially overriding config if 'launcher' key exists
         launcher=SingleNodeLauncher()
     )
 
@@ -81,10 +89,10 @@ def main(config, output, parsl_rundir):
         run_dir=parsl_rundir,
         executors=[
             HighThroughputExecutor(
-                cores_per_worker=16,
-                available_accelerators=1,
+                cores_per_worker=16, # Revert to hardcoded value
+                available_accelerators=1, # Revert to hardcoded value
                 cpu_affinity='block',
-                mem_per_worker=64,
+                mem_per_worker=64, # Revert to hardcoded value
                 worker_debug=False,
                 label="BO_Search_Exec",
                 provider=slurm_provider
@@ -93,9 +101,9 @@ def main(config, output, parsl_rundir):
     )
     parsl.load(parsl_config)
 
-    config = get_config(config_filename)
-    benches = config['benchmarks'].keys()
-    uq_methods = config['uq_methods'].keys()
+    # config = get_config(config_filename) # Config is already loaded as config_data
+    benches = config_data['benchmarks'].keys()
+    uq_methods = config_data['uq_methods'].keys()
     dsets = ['tails', 'gaps']
 
     total = list(product(benches, uq_methods, dsets))
@@ -115,7 +123,7 @@ def main(config, output, parsl_rundir):
     results = list()
     for bench, uq_method, dset in total:
         print(f'Running {bench} with {uq_method} on {dset}')
-        res = run_bo(config_filename, bench, uq_method, dset, output)
+        res = run_bo(config_data, bench, uq_method, dset, output)
         results.append(res)
 
     for res in results:

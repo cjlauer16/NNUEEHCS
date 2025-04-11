@@ -458,3 +458,35 @@ evaluation:
     - name: auroc
     - name: uncertainty_estimating_throughput
     - name: max_memory_usage
+
+bo_slurm_config:
+  partition: "gpuA40x4-preempt"
+  account: "mzu-delta-gpu"
+  gpus_per_task: 1
+  cpus_per_gpu: 16
+  nodes: 1
+  ntasks_per_node: 1
+  nodes_per_block: 1
+  max_blocks: 3
+  init_blocks: 1
+  parallelism: 1
+  exclusive: false
+  mem_per_node: 64
+  walltime: "1:55:00"
+  cmd_timeout: 120
+
+metric_eval_slurm_config:
+  partition: "gpuA100x4"
+  account: "mzu-delta-gpu"
+  gpus_per_task: 1
+  cpus_per_gpu: 16
+  nodes: 1
+  ntasks_per_node: 1
+  nodes_per_block: 1
+  max_blocks: 3
+  init_blocks: 1
+  parallelism: 1
+  exclusive: false
+  mem_per_node: 64
+  walltime: "00:35:00"
+  cmd_timeout: 120

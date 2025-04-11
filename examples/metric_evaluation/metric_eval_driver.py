@@ -95,30 +95,33 @@ def combine_results(result_files, output_file):
 def main(config, output, parsl_rundir, results_dir, max_tasks, local, skip_completed):
 
     config_filename = config
+    config_data = get_config(config_filename)
+    slurm_settings = config_data.get('metric_eval_slurm_config', {})
+
     local_provider = LocalProvider(
         init_blocks=1,
         max_blocks=1,
         parallelism=1
     )
 
+    # Construct scheduler options string dynamically and add to settings
+    gpus_per_task = slurm_settings.pop('gpus_per_task', 1) # Remove key after getting value
+    cpus_per_gpu = slurm_settings.pop('cpus_per_gpu', 16)
+    nodes = slurm_settings.pop('nodes', 1)
+    ntasks_per_node = slurm_settings.pop('ntasks_per_node', 1)
+    scheduler_opts = (
+        f"--gpus-per-task={gpus_per_task} "
+        f"--cpus-per-gpu={cpus_per_gpu} "
+        f"--nodes={nodes} "
+        f"--ntasks-per-node={ntasks_per_node}"
+    )
+    slurm_settings['scheduler_options'] = f"#SBATCH {scheduler_opts}"
+
     slurm_provider = SlurmProvider(
-        partition="gpuA100x4",
-        # partition="gpuA",
-        account="mzu-delta-gpu",
-        scheduler_options="#SBATCH --gpus-per-task=1 --cpus-per-gpu=16 --nodes=1 --ntasks-per-node=1 --nodes=1",
-        nodes_per_block=1,
-        max_blocks=3,
-        init_blocks=1,
-        parallelism=1,
-        exclusive=False,
-        mem_per_node=64,
-        # walltime="1:55:00",
-        walltime="00:35:00",
-        cmd_timeout=120,
+        **slurm_settings,
         launcher=SingleNodeLauncher()
     )
 
-    # Choose provider based on local flag
     provider = local_provider if local else slurm_provider
     
     parsl_config = Config(
@@ -138,9 +141,8 @@ def main(config, output, parsl_rundir, results_dir, max_tasks, local, skip_compl
     )
     parsl.load(parsl_config)
 
-    config = get_config(config_filename)
-    benches = config['benchmarks'].keys()
-    uq_methods = config['uq_methods'].keys()
+    benches = config_data['benchmarks'].keys()
+    uq_methods = config_data['uq_methods'].keys()
     dsets = ['tails', 'gaps']
 
     total = list(product(benches, uq_methods, dsets))
