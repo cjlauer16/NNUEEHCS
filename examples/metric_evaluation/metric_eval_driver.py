@@ -91,7 +91,8 @@ def combine_results(result_files, output_file):
 @click.option('--results_dir', default=None, help='Path to the results directory for evaluation', required=False)
 @click.option('--max_tasks', default=None, type=int, help='Maximum number of tasks to run (for testing)', required=False)
 @click.option('--local', is_flag=True, help='Run tasks locally instead of on the cluster', required=False)
-def main(config, output, parsl_rundir, results_dir, max_tasks, local):
+@click.option('--skip-completed', is_flag=True, help='Skip tasks if their output file already exists.', required=False)
+def main(config, output, parsl_rundir, results_dir, max_tasks, local, skip_completed):
 
     config_filename = config
     local_provider = LocalProvider(
@@ -174,12 +175,18 @@ def main(config, output, parsl_rundir, results_dir, max_tasks, local):
     for bench, uq_method, dset in total:
         output_file = f"{output}/metric_eval/{bench}_{dset}_{uq_method}.csv"
         result_files.append(output_file)
+
+        if skip_completed and os.path.exists(output_file):
+            print(f"Skipping completed task: {bench} with {uq_method} on {dset} (output file exists: {output_file})")
+            continue 
+
         print(f'Running metric evaluation for {bench} with {uq_method} on {dset}')
         res = run_evaluate_metrics(config_filename, bench, uq_method, dset, 
                                    results_dir, output_file)
         eval_results.append(res)
     
-    # Wait for all evaluation tasks to complete
+    # Wait for all submitted evaluation tasks to complete
+    print(f"Waiting for {len(eval_results)} submitted tasks to complete...")
     for res in eval_results:
         try:
             print(res.result())
