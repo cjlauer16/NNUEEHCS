@@ -438,6 +438,7 @@ class RuntimeEvaluation(EvaluationMetric):
             for trial in range(self.num_trials):
                 start_time = time.time()
                 retval = eval_functor(model, data_combined)
+                torch.cuda.synchronize()
                 end_time = time.time()
                 runtimes[trial] = end_time - start_time
         mean = np.mean(runtimes)
